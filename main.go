@@ -1,16 +1,16 @@
 package main
 
 import (
-	"fmt"
-
-	"github.com/gofiber/fiber/v2"
+	"go-ecommerce-app/config"
+	"go-ecommerce-app/internal/api"
+	"log"
 )
 
 func main() {
-	fmt.Println("Hello, World!")
-
-	api := fiber.New()
-	// routes
-
-	api.Listen("localhost:9000")
+	config, err := config.SetupEnv()
+	if err != nil {
+		log.Fatalf("Failed to setup environment: %v", err)
+	}
+	
+	api.StartServer(config)
 }

@@ -2,7 +2,10 @@ module go-ecommerce-app
 
 go 1.25.5
 
-require github.com/gofiber/fiber/v2 v2.52.10
+require (
+	github.com/gofiber/fiber/v2 v2.52.10
+	github.com/joho/godotenv v1.5.1
+)
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
@@ -17,3 +20,4 @@ require (
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 )
+ 
