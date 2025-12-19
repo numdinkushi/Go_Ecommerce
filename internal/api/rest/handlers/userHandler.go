@@ -2,20 +2,23 @@ package handlers
 
 import (
 	"go-ecommerce-app/internal/api/rest"
+	"go-ecommerce-app/internal/dto"
+	"go-ecommerce-app/internal/service"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type UserHandler struct {
 	// service UserService
+	userService service.UserService
 }
-
 
 func SetupUserRoutes(restHandler *rest.RestHandler) {
 	app := restHandler.App
 
 	//create an instance of user service and inject to handler
-	handler := UserHandler{}
+	userService := service.UserService{}
+	handler := UserHandler{userService: userService}
 
 	//public endpoints
 	app.Post("/register", handler.Register)
@@ -41,8 +44,25 @@ func SetupUserRoutes(restHandler *rest.RestHandler) {
 }
 
 func (h *UserHandler) Register(ctx *fiber.Ctx) error {
+	user := dto.UserSignUp{}
+	err := ctx.BodyParser(&user)
+
+	if err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Please provide all the required fields",
+		})
+	}
+
+	token, err := h.userService.Register(user)
+
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to register user",
+		})
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Registered successfully",
+		"message": token,
 	})
 }
 
@@ -51,7 +71,6 @@ func (h *UserHandler) Login(ctx *fiber.Ctx) error {
 		"message": "Logged in successfully",
 	})
 }
-
 
 func (h *UserHandler) Verify(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
