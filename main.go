@@ -3,14 +3,21 @@ package main
 import (
 	"go-ecommerce-app/config"
 	"go-ecommerce-app/internal/api"
+	"go-ecommerce-app/internal/infra"
 	"log"
 )
 
 func main() {
-	config, err := config.SetupEnv()
+	cfg, err := config.SetupEnv()
 	if err != nil {
 		log.Fatalf("Failed to setup environment: %v", err)
 	}
-	
-	api.StartServer(config)
+
+	err = infra.InitDB(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer infra.CloseDB()
+
+	api.StartServer(cfg)
 }
