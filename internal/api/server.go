@@ -12,7 +12,28 @@ import (
 )
 
 func StartServer(config config.AppConfig) {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			
+			if code == fiber.StatusNotFound {
+				return c.Status(code).JSON(fiber.Map{
+					"message": "Route not found",
+					"error":   "The requested endpoint does not exist",
+					"path":    c.Path(),
+					"method":  c.Method(),
+				})
+			}
+			
+			return c.Status(code).JSON(fiber.Map{
+				"message": "An error occurred",
+				"error":   err.Error(),
+			})
+		},
+	})
 
 	db := infra.GetDB()
 
