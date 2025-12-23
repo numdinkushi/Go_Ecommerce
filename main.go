@@ -17,7 +17,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer infra.CloseDB()
 
+	log.Println("Starting server...")
 	api.StartServer(cfg)
 }
