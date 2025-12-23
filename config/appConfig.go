@@ -9,6 +9,11 @@ import (
 
 type AppConfig struct {
 	ServerPort string
+	DBHost     string
+	DBPort     string
+	DBUser     string
+	DBPassword string
+	DBName     string
 }
 
 func SetupEnv() (config AppConfig, err error) {
@@ -25,7 +30,39 @@ func SetupEnv() (config AppConfig, err error) {
 	httpPort := os.Getenv("HTTP_PORT")
 	if len(httpPort) < 1 {
 		return AppConfig{}, errors.New("HTTP_PORT is not set, env variable is not found")
-	} 
+	}
 
-	return AppConfig{ServerPort: httpPort}, nil
+	dbHost := os.Getenv("DB_HOST")
+	if len(dbHost) < 1 {
+		dbHost = "localhost"
+	}
+
+	dbPort := os.Getenv("DB_PORT")
+	if len(dbPort) < 1 {
+		dbPort = "5432"
+	}
+
+	dbUser := os.Getenv("DB_USER")
+	if len(dbUser) < 1 {
+		return AppConfig{}, errors.New("DB_USER is not set, env variable is not found")
+	}
+
+	dbPassword := os.Getenv("DB_PASSWORD")
+	if len(dbPassword) < 1 {
+		return AppConfig{}, errors.New("DB_PASSWORD is not set, env variable is not found")
+	}
+
+	dbName := os.Getenv("DB_NAME")
+	if len(dbName) < 1 {
+		return AppConfig{}, errors.New("DB_NAME is not set, env variable is not found")
+	}
+
+	return AppConfig{
+		ServerPort: httpPort,
+		DBHost:     dbHost,
+		DBPort:     dbPort,
+		DBUser:     dbUser,
+		DBPassword: dbPassword,
+		DBName:     dbName,
+	}, nil
 }
