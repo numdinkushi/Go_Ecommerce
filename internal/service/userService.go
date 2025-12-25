@@ -4,27 +4,38 @@ import (
 	"errors"
 	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/dto"
+	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
 	"log"
 )
 
 type UserService struct {
 	Repo repository.UserRepository
+	Auth helper.Auth
 }
 
-func NewUserService(repo repository.UserRepository) UserService {
-	return UserService{Repo: repo}
+func NewUserService(repo repository.UserRepository, auth helper.Auth) UserService {
+	return UserService{
+		Repo: repo,
+		Auth: auth,
+	}
 }
 
 func (s UserService) Register(user dto.UserSignUp) (*domain.User, error) {
 	log.Println("Registering user", user)
+
+	hashedPassword, err := s.Auth.CreateHashedPassword(user.Password)
+	if err != nil {
+		return nil, errors.New("failed to create hashed password")
+	}
+	// user.Password = hashedPassword
 
 	createdUser, err := s.Repo.CreateUser(&domain.User{
 		FirstName: user.FirstName,
 		LastName:  user.LastName,
 		Email:     user.Email,
 		Phone:     user.Phone,
-		Password:  user.Password,
+		Password:  hashedPassword,
 	})
 	if err != nil {
 		return nil, err
@@ -33,14 +44,32 @@ func (s UserService) Register(user dto.UserSignUp) (*domain.User, error) {
 	return createdUser, nil
 }
 
-func (s UserService) Login(email string, password string) (string, error) {
+func (s UserService) Login(email string, password string) (*domain.User, string, error) {
 	user, err := s.Repo.FindUserByEmail(email)
 	if err != nil {
-		return "", errors.New("user does not exist with the provided email id")
+		return nil, "", errors.New("user does not exist with the provided email id")
 	}
 
+	// Verify plain text password against hashed password from database
+	// password: plain text from login request
+	// user.Password: bcrypt hash stored in database
+	isValidPassword, err := s.Auth.VerifyPassword(password, user.Password)
+	if err != nil {
+		return nil, "", errors.New("invalid password")
+	}
+
+	if !isValidPassword {
+		return nil, "", errors.New("invalid password")
+	}
+
+	token, err := s.Auth.GenerateToken(user.ID, user.Email, user.UserType)
+	if err != nil {
+		return nil, "", errors.New("failed to generate token")
+	}
+
+	return user, token, nil
+
 	// compare password and generate token
-	return user.Email, nil
 }
 
 func (s UserService) FindUserByEmail(email string) (*domain.User, error) {

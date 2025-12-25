@@ -5,6 +5,7 @@ import (
 	"go-ecommerce-app/internal/api/rest"
 	"go-ecommerce-app/internal/api/rest/handlers"
 	"go-ecommerce-app/internal/domain"
+	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/infra"
 	"log"
 
@@ -18,7 +19,7 @@ func StartServer(config config.AppConfig) {
 			if e, ok := err.(*fiber.Error); ok {
 				code = e.Code
 			}
-			
+
 			if code == fiber.StatusNotFound {
 				return c.Status(code).JSON(fiber.Map{
 					"message": "Route not found",
@@ -27,7 +28,7 @@ func StartServer(config config.AppConfig) {
 					"method":  c.Method(),
 				})
 			}
-			
+
 			return c.Status(code).JSON(fiber.Map{
 				"message": "An error occurred",
 				"error":   err.Error(),
@@ -39,6 +40,8 @@ func StartServer(config config.AppConfig) {
 
 	// Run database migrations
 	err := db.AutoMigrate(&domain.User{})
+
+	auth := helper.SetupAuth(config.JwtSecret)
 	if err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
@@ -47,6 +50,7 @@ func StartServer(config config.AppConfig) {
 	restHandler := &rest.RestHandler{
 		App: app,
 		DB:  db,
+		Auth: auth,
 	}
 
 	setupRoutes(restHandler)

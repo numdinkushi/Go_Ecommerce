@@ -14,6 +14,7 @@ type AppConfig struct {
 	DBUser     string
 	DBPassword string
 	DBName     string
+	JwtSecret  string
 }
 
 func SetupEnv() (config AppConfig, err error) {
@@ -57,6 +58,11 @@ func SetupEnv() (config AppConfig, err error) {
 		return AppConfig{}, errors.New("DB_NAME is not set, env variable is not found")
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if len(jwtSecret) < 1 {
+		return AppConfig{}, errors.New("JWT_SECRET is not set, env variable is not found")
+	}
+
 	return AppConfig{
 		ServerPort: httpPort,
 		DBHost:     dbHost,
@@ -64,5 +70,6 @@ func SetupEnv() (config AppConfig, err error) {
 		DBUser:     dbUser,
 		DBPassword: dbPassword,
 		DBName:     dbName,
+		JwtSecret:  jwtSecret,
 	}, nil
 }
