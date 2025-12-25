@@ -13,6 +13,7 @@ import (
 type UserHandler struct {
 	// service UserService
 	userService service.UserService
+	auth        helper.Auth
 }
 
 func SetupUserRoutes(restHandler *rest.RestHandler) {
@@ -20,34 +21,40 @@ func SetupUserRoutes(restHandler *rest.RestHandler) {
 
 	//create an instance of user repository and inject to service
 	userRepo := repository.NewUserRepository(restHandler.DB)
-	userService := service.NewUserService(userRepo)
-	handler := UserHandler{userService: userService}
+	userService := service.NewUserService(userRepo, restHandler.Auth)
+	handler := UserHandler{
+		userService: userService,
+		auth:        restHandler.Auth,
+	}
 
-	//public endpoints
+	//public endpoints (no authentication required)
 	app.Post("/register", handler.Register)
 	app.Post("/login", handler.Login)
 
-	//private endpoints
-	app.Get("/users", handler.GetUsers)
-	app.Get("/users/:id", handler.FindUserByID)
-	app.Put("/users/:id", handler.UpdateUser)
-	app.Delete("/users/:id", handler.DeleteUser)
-	app.Get("/verify", handler.Verify)
-	app.Get("/profile", handler.Profile)
-	app.Post("/profile", handler.CreateProfile)
-	app.Put("/profile", handler.UpdateProfile)
-	app.Delete("/profile", handler.DeleteProfile)
-	app.Get("/orders", handler.Orders)
-	app.Get("/orders/:id", handler.GetOrder)
-	app.Post("/become-seller", handler.BecomeSeller)
-	app.Get("verification-code", handler.VerificationCode)
-	app.Get("/addresses", handler.Addresses)
-	app.Get("/payments", handler.Payments)
-	app.Get("/reviews", handler.Reviews)
-	app.Get("/wishlist", handler.Wishlist)
-	app.Get("/cart", handler.Cart)
-	app.Get("/checkout", handler.Checkout)
-	app.Get("/logout", handler.Logout)
+	//private endpoints (authentication required)
+	privateRoutes := app.Group("/", restHandler.Auth.Authorize)
+	privateRoutes.Get("/users", handler.GetUsers)
+	privateRoutes.Get("/users/profile", handler.GetProfile)
+	privateRoutes.Put("/users/verify", handler.Verify)
+	privateRoutes.Get("/users/:id", handler.FindUserByID)
+	privateRoutes.Put("/users/:id", handler.UpdateUser)
+	privateRoutes.Delete("/users/:id", handler.DeleteUser)
+	privateRoutes.Get("/verify", handler.Verify)
+	// privateRoutes.Get("/profile", handler.GetProfile)
+	privateRoutes.Post("/profile", handler.CreateProfile)
+	privateRoutes.Put("/profile", handler.UpdateProfile)
+	privateRoutes.Delete("/profile", handler.DeleteProfile)
+	privateRoutes.Get("/orders", handler.Orders)
+	privateRoutes.Get("/orders/:id", handler.GetOrder)
+	privateRoutes.Post("/become-seller", handler.BecomeSeller)
+	privateRoutes.Get("verification-code", handler.VerificationCode)
+	privateRoutes.Get("/addresses", handler.Addresses)
+	privateRoutes.Get("/payments", handler.Payments)
+	privateRoutes.Get("/reviews", handler.Reviews)
+	privateRoutes.Get("/wishlist", handler.Wishlist)
+	privateRoutes.Get("/cart", handler.Cart)
+	privateRoutes.Get("/checkout", handler.Checkout)
+	privateRoutes.Get("/logout", handler.Logout)
 }
 
 func (h *UserHandler) Register(ctx *fiber.Ctx) error {
@@ -66,9 +73,31 @@ func (h *UserHandler) Register(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
+	// Generate token for the newly registered user
+	token, err := h.auth.GenerateToken(createdUser.ID, createdUser.Email, createdUser.UserType)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "User registered but failed to generate token",
+		})
+	}
+
+	// Create user response without password
+	userResponse := fiber.Map{
+		"id":         createdUser.ID,
+		"first_name": createdUser.FirstName,
+		"last_name":  createdUser.LastName,
+		"email":      createdUser.Email,
+		"phone":      createdUser.Phone,
+		"user_type":  createdUser.UserType,
+		"verified":   createdUser.Verified,
+		"created_at": createdUser.CreatedAt,
+		"updated_at": createdUser.UpdatedAt,
+	}
+
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "User registered successfully",
-		"user":    createdUser,
+		"user":    userResponse,
+		"token":   token,
 	})
 }
 
@@ -166,15 +195,29 @@ func (h *UserHandler) Login(ctx *fiber.Ctx) error {
 		})
 	}
 
-	token, err := h.userService.Login(loginData.Email, loginData.Password)
+	user, token, err := h.userService.Login(loginData.Email, loginData.Password)
 	if err != nil {
 		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"message": "please provide correct user id password",
+			"message": "Invalid email or password",
 		})
+	}
+
+	// Create user response without password
+	userResponse := fiber.Map{
+		"id":         user.ID,
+		"first_name": user.FirstName,
+		"last_name":  user.LastName,
+		"email":      user.Email,
+		"phone":      user.Phone,
+		"user_type":  user.UserType,
+		"verified":   user.Verified,
+		"created_at": user.CreatedAt,
+		"updated_at": user.UpdatedAt,
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "login",
+		"user":    userResponse,
 		"token":   token,
 	})
 }
@@ -185,9 +228,11 @@ func (h *UserHandler) Verify(ctx *fiber.Ctx) error {
 	})
 }
 
-func (h *UserHandler) Profile(ctx *fiber.Ctx) error {
+func (h *UserHandler) GetProfile(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Profile fetched successfully",
+		"message": "get profile",
+		"user":    user,
 	})
 }
 
