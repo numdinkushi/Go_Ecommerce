@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"errors"
 	"go-ecommerce-app/internal/domain"
 	"log"
 
@@ -70,7 +69,7 @@ func (r *userRepository) UpdateUser(id uint, u domain.User) (domain.User, error)
 	err := r.DB.Model(&user).Clauses(clause.Returning{}).Where("id=?", id).Updates(u).Error
 	if err != nil {
 		log.Printf("error on update %v", err)
-		return domain.User{}, errors.New("failed update user")
+		return domain.User{}, err // Return original error instead of wrapping
 	}
 	return user, nil
 }

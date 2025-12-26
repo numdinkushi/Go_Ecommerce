@@ -24,12 +24,14 @@ func HandleDBError(ctx *fiber.Ctx, err error) error {
 		})
 	}
 
-	// Check for duplicate email error
-	if strings.Contains(errMsg, "duplicate key value violates unique constraint") &&
-		strings.Contains(errMsg, "uni_users_email") {
+	// Check for duplicate email error (multiple patterns to catch different error formats)
+	if (strings.Contains(errMsg, "duplicate key value violates unique constraint") ||
+		strings.Contains(errMsg, "duplicate key") ||
+		strings.Contains(errMsg, "email already exists")) &&
+		(strings.Contains(errMsg, "uni_users_email") || strings.Contains(errMsg, "email")) {
 		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message": "Email already exists",
-			"error":   "This email is already registered. Please use a different email address.",
+			"error":   "This email address is already registered to another user. Please use a different email address.",
 		})
 	}
 

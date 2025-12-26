@@ -98,6 +98,20 @@ func (s UserService) FindAllUsers() ([]domain.User, error) {
 }
 
 func (s UserService) UpdateUser(id uint, updateData dto.UserUpdate) (*domain.User, error) {
+	// Check if user exists
+	existingUser, err := s.Repo.FindUserByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// If email is being updated, check if it's already taken by another user
+	if updateData.Email != nil && *updateData.Email != existingUser.Email {
+		userWithEmail, err := s.Repo.FindUserByEmail(*updateData.Email)
+		if err == nil && userWithEmail != nil && userWithEmail.ID != id {
+			return nil, errors.New("email already exists")
+		}
+	}
+
 	updateUser := domain.User{}
 
 	if updateData.FirstName != nil {
@@ -134,8 +148,8 @@ func (s UserService) DeleteUser(id uint) error {
 
 func (s UserService) isVerifiedUser(id uint) bool {
 	currentUser, err := s.Repo.FindUserByID(id)
-	
-	return err == nil && currentUser.Verified 
+
+	return err == nil && currentUser.Verified
 }
 
 func (s UserService) GetVerificationCode(id uint, code int) (int, error) {
