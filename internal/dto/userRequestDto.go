@@ -19,3 +19,7 @@ type UserUpdate struct {
 	Phone     *string `json:"phone,omitempty"`
 	Password  *string `json:"password,omitempty"`
 }
+
+type VerificationCodeInput struct {
+	Code int `json:"code"`
+}

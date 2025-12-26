@@ -7,6 +7,7 @@ import (
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
 	"log"
+	"time"
 )
 
 type UserService struct {
@@ -131,16 +132,60 @@ func (s UserService) DeleteUser(id uint) error {
 	return nil
 }
 
+func (s UserService) isVerifiedUser(id uint) bool {
+	currentUser, err := s.Repo.FindUserByID(id)
+	
+	return err == nil && currentUser.Verified 
+}
+
 func (s UserService) GetVerificationCode(id uint, code int) (int, error) {
-	//perform some db operation
-	//business logic
-	return 0, nil
+	//1. check if user is verified
+	if s.isVerifiedUser(id) {
+		return 0, errors.New("user is already verified")
+	}
+	//2. if not verified, generate a verification code
+	verificationCode, err := s.Auth.GenerateVerificationCode()
+	if err != nil {
+		return 0, errors.New("failed to generate verification code")
+	}
+	user, err := s.Repo.FindUserByID(id)
+	if err != nil {
+		return 0, errors.New("failed to find user")
+	}
+	user.Code = verificationCode
+	user.Expiry = time.Now().Add(time.Minute * 10)
+	_, err = s.Repo.UpdateUser(id, *user)
+	if err != nil {
+		return 0, errors.New("failed to update user")
+	}
+	//3. update user profile with verification code
+	//4. return verification code
+	//send sms or email to user with verification code
+	return verificationCode, nil
 }
 
 func (s UserService) VerifyCode(id uint, code int) (bool, error) {
-	//perform some db operation
-	//business logic
-	return false, nil
+	//1. check if user is verified
+	if s.isVerifiedUser(id) {
+		return false, errors.New("user is already verified")
+	}
+	//2. if not verified, verify the code
+	user, err := s.Repo.FindUserByID(id)
+	if err != nil {
+		return false, errors.New("failed to find user")
+	}
+	if user.Code != code {
+		return false, errors.New("invalid verification code")
+	}
+	if user.Expiry.Before(time.Now()) {
+		return false, errors.New("verification code has expired")
+	}
+	user.Verified = true
+	_, err = s.Repo.UpdateUser(id, *user)
+	if err != nil {
+		return false, errors.New("failed to update user")
+	}
+	return true, nil
 }
 
 func (s UserService) Profile(user interface{}) (*domain.User, error) {

@@ -35,11 +35,13 @@ func SetupUserRoutes(restHandler *rest.RestHandler) {
 	privateRoutes := app.Group("/", restHandler.Auth.Authorize)
 	privateRoutes.Get("/users", handler.GetUsers)
 	privateRoutes.Get("/users/profile", handler.GetProfile)
-	privateRoutes.Put("/users/verify", handler.Verify)
+	privateRoutes.Get("/users/verify", handler.GetVerificationCode)
+	privateRoutes.Post("/users/verify", handler.Verify)
 	privateRoutes.Get("/users/:id", handler.FindUserByID)
 	privateRoutes.Put("/users/:id", handler.UpdateUser)
 	privateRoutes.Delete("/users/:id", handler.DeleteUser)
-	privateRoutes.Get("/verify", handler.Verify)
+	privateRoutes.Get("/verify", handler.GetVerificationCode)
+	privateRoutes.Post("/verify", handler.Verify)
 	// privateRoutes.Get("/profile", handler.GetProfile)
 	privateRoutes.Post("/profile", handler.CreateProfile)
 	privateRoutes.Put("/profile", handler.UpdateProfile)
@@ -47,7 +49,6 @@ func SetupUserRoutes(restHandler *rest.RestHandler) {
 	privateRoutes.Get("/orders", handler.Orders)
 	privateRoutes.Get("/orders/:id", handler.GetOrder)
 	privateRoutes.Post("/become-seller", handler.BecomeSeller)
-	privateRoutes.Get("verification-code", handler.VerificationCode)
 	privateRoutes.Get("/addresses", handler.Addresses)
 	privateRoutes.Get("/payments", handler.Payments)
 	privateRoutes.Get("/reviews", handler.Reviews)
@@ -222,7 +223,41 @@ func (h *UserHandler) Login(ctx *fiber.Ctx) error {
 	})
 }
 
+func (h *UserHandler) GetVerificationCode(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	verificationCode, err := h.userService.GetVerificationCode(user.ID, user.Code)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "get verification code",
+		"data":    verificationCode,
+	})
+}
+
 func (h *UserHandler) Verify(ctx *fiber.Ctx) error {
+
+	user := h.auth.GetCurrentUser(ctx)
+	verificationCodeInput := dto.VerificationCodeInput{}
+	if err := ctx.BodyParser(&verificationCodeInput); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	isVerified, err := h.userService.VerifyCode(user.ID, verificationCodeInput.Code)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	if !isVerified {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid verification code",
+		})
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Verified in successfully",
 	})
@@ -237,6 +272,7 @@ func (h *UserHandler) GetProfile(ctx *fiber.Ctx) error {
 }
 
 func (h *UserHandler) CreateProfile(ctx *fiber.Ctx) error {
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Profile created successfully",
 	})
@@ -310,11 +346,5 @@ func (h *UserHandler) Checkout(ctx *fiber.Ctx) error {
 func (h *UserHandler) Logout(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Logged out successfully",
-	})
-}
-
-func (h *UserHandler) VerificationCode(ctx *fiber.Ctx) error {
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Verification code fetched successfully",
 	})
 }

@@ -152,3 +152,7 @@ func (a Auth) GetCurrentUser(ctx *fiber.Ctx) domain.User {
 	}
 	return user
 }
+
+func (a Auth) GenerateVerificationCode() (int, error) {
+	return RandomNumbers(6)
+}
