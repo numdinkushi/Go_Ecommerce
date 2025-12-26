@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"strings"
+
+	"go-ecommerce-app/config"
 	"go-ecommerce-app/internal/api/rest"
 	"go-ecommerce-app/internal/dto"
 	"go-ecommerce-app/internal/helper"
@@ -14,6 +17,7 @@ type UserHandler struct {
 	// service UserService
 	userService service.UserService
 	auth        helper.Auth
+	config      config.AppConfig
 }
 
 func SetupUserRoutes(restHandler *rest.RestHandler) {
@@ -21,10 +25,11 @@ func SetupUserRoutes(restHandler *rest.RestHandler) {
 
 	//create an instance of user repository and inject to service
 	userRepo := repository.NewUserRepository(restHandler.DB)
-	userService := service.NewUserService(userRepo, restHandler.Auth)
+	userService := service.NewUserService(userRepo, restHandler.Auth, restHandler.Config)
 	handler := UserHandler{
 		userService: userService,
 		auth:        restHandler.Auth,
+		config:      restHandler.Config,
 	}
 
 	//public endpoints (no authentication required)
@@ -226,14 +231,22 @@ func (h *UserHandler) Login(ctx *fiber.Ctx) error {
 func (h *UserHandler) GetVerificationCode(ctx *fiber.Ctx) error {
 	user := h.auth.GetCurrentUser(ctx)
 
-	verificationCode, err := h.userService.GetVerificationCode(user.ID, user.Code)
+	err := h.userService.GetVerificationCode(user.ID)
 	if err != nil {
+		errorMessage := err.Error()
+		if strings.Contains(errorMessage, "SMS") || strings.Contains(errorMessage, "Twilio") || strings.Contains(errorMessage, "phone") {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"success": false,
+				"message": "Failed to send verification code",
+				"error":   errorMessage,
+			})
+		}
 		return helper.HandleDBError(ctx, err)
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "get verification code",
-		"data":    verificationCode,
+		"success": true,
+		"message": "Verification code sent successfully",
 	})
 }
 

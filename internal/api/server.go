@@ -51,6 +51,7 @@ func StartServer(config config.AppConfig) {
 		App: app,
 		DB:  db,
 		Auth: auth,
+		Config: config,
 	}
 
 	setupRoutes(restHandler)
@@ -61,3 +62,4 @@ func StartServer(config config.AppConfig) {
 func setupRoutes(restHandler *rest.RestHandler) {
 	handlers.SetupUserRoutes(restHandler)
 }
+ 

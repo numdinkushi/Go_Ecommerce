@@ -8,13 +8,16 @@ import (
 )
 
 type AppConfig struct {
-	ServerPort string
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	JwtSecret  string
+	ServerPort      string
+	DBHost          string
+	DBPort          string
+	DBUser          string
+	DBPassword      string
+	DBName          string
+	JwtSecret       string
+	TwilioAccountSid string
+	TwilioAuthToken  string
+	TwilioPhoneNumber string
 }
 
 func SetupEnv() (config AppConfig, err error) {
@@ -63,13 +66,31 @@ func SetupEnv() (config AppConfig, err error) {
 		return AppConfig{}, errors.New("JWT_SECRET is not set, env variable is not found")
 	}
 
+	twilioAccountSid := os.Getenv("TWILIO_ACCOUNT_SID")
+	if len(twilioAccountSid) < 1 {
+		return AppConfig{}, errors.New("TWILIO_ACCOUNT_SID is not set, env variable is not found")
+	}
+
+	twilioAuthToken := os.Getenv("TWILIO_AUTH_TOKEN")
+	if len(twilioAuthToken) < 1 {
+		return AppConfig{}, errors.New("TWILIO_AUTH_TOKEN is not set, env variable is not found")
+	}
+
+	twilioPhoneNumber := os.Getenv("TWILIO_PHONE_NUMBER")
+	if len(twilioPhoneNumber) < 1 {
+		return AppConfig{}, errors.New("TWILIO_PHONE_NUMBER is not set, env variable is not found")
+	}
+
 	return AppConfig{
-		ServerPort: httpPort,
-		DBHost:     dbHost,
-		DBPort:     dbPort,
-		DBUser:     dbUser,
-		DBPassword: dbPassword,
-		DBName:     dbName,
-		JwtSecret:  jwtSecret,
+		ServerPort:        httpPort,
+		DBHost:            dbHost,
+		DBPort:            dbPort,
+		DBUser:            dbUser,
+		DBPassword:        dbPassword,
+		DBName:            dbName,
+		JwtSecret:         jwtSecret,
+		TwilioAccountSid:  twilioAccountSid,
+		TwilioAuthToken:   twilioAuthToken,
+		TwilioPhoneNumber: twilioPhoneNumber,
 	}, nil
 }
