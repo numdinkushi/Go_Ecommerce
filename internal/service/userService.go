@@ -2,23 +2,28 @@ package service
 
 import (
 	"errors"
+	"go-ecommerce-app/config"
 	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/dto"
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
+	"go-ecommerce-app/pkg/notification"
 	"log"
+	"strconv"
 	"time"
 )
 
 type UserService struct {
-	Repo repository.UserRepository
-	Auth helper.Auth
+	Repo   repository.UserRepository
+	Auth   helper.Auth
+	Config config.AppConfig
 }
 
-func NewUserService(repo repository.UserRepository, auth helper.Auth) UserService {
+func NewUserService(repo repository.UserRepository, auth helper.Auth, config config.AppConfig) UserService {
 	return UserService{
-		Repo: repo,
-		Auth: auth,
+		Repo:   repo,
+		Auth:   auth,
+		Config: config,
 	}
 }
 
@@ -98,6 +103,7 @@ func (s UserService) FindAllUsers() ([]domain.User, error) {
 }
 
 func (s UserService) UpdateUser(id uint, updateData dto.UserUpdate) (*domain.User, error) {
+
 	// Check if user exists
 	existingUser, err := s.Repo.FindUserByID(id)
 	if err != nil {
@@ -152,30 +158,36 @@ func (s UserService) isVerifiedUser(id uint) bool {
 	return err == nil && currentUser.Verified
 }
 
-func (s UserService) GetVerificationCode(id uint, code int) (int, error) {
+func (s UserService) GetVerificationCode(id uint) error {
 	//1. check if user is verified
 	if s.isVerifiedUser(id) {
-		return 0, errors.New("user is already verified")
+		return  errors.New("user is already verified")
 	}
 	//2. if not verified, generate a verification code
 	verificationCode, err := s.Auth.GenerateVerificationCode()
 	if err != nil {
-		return 0, errors.New("failed to generate verification code")
+		return  errors.New("failed to generate verification code")
 	}
 	user, err := s.Repo.FindUserByID(id)
 	if err != nil {
-		return 0, errors.New("failed to find user")
+		return  errors.New("failed to find user")
 	}
 	user.Code = verificationCode
 	user.Expiry = time.Now().Add(time.Minute * 10)
 	_, err = s.Repo.UpdateUser(id, *user)
 	if err != nil {
-		return 0, errors.New("failed to update user")
+		return  errors.New("failed to update user")
 	}
-	//3. update user profile with verification code
-	//4. return verification code
+
 	//send sms or email to user with verification code
-	return verificationCode, nil
+	notificationClient := notification.NewNotificationClient(s.Config)
+	formattedPhone := helper.FormatPhoneToE164(user.Phone)
+	err = notificationClient.SendSMS(formattedPhone, strconv.Itoa(verificationCode))
+	if err != nil {
+		return errors.New("failed to send verification code: " + err.Error())
+	}
+
+	return nil
 }
 
 func (s UserService) VerifyCode(id uint, code int) (bool, error) {
