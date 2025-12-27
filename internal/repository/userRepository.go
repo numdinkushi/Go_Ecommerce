@@ -15,6 +15,7 @@ type UserRepository interface {
 	FindAllUsers() ([]domain.User, error)
 	UpdateUser(id uint, u domain.User) (domain.User, error)
 	DeleteUser(id uint) error
+	CreateBankAccount(bankAccount *domain.BankAccount) (*domain.BankAccount, error)
 }
 
 type userRepository struct {
@@ -76,4 +77,14 @@ func (r *userRepository) UpdateUser(id uint, u domain.User) (domain.User, error)
 
 func (r *userRepository) DeleteUser(id uint) error {
 	return r.DB.Delete(&domain.User{}, id).Error
+}
+
+func (r *userRepository) CreateBankAccount(bankAccount *domain.BankAccount) (*domain.BankAccount, error) {
+	err := r.DB.Create(bankAccount).Error
+	if err != nil {
+		log.Printf("Failed to create bank account: %v", err)
+		return nil, err
+	}
+	log.Println("Bank account created successfully")
+	return bankAccount, nil
 }
