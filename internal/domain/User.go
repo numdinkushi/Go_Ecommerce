@@ -17,6 +17,3 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"default:CURRENT_TIMESTAMP"`
 }
 
-// func (User) TableName() string {
-// 	return "users"
-// } 

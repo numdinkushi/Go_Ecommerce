@@ -39,7 +39,7 @@ func StartServer(config config.AppConfig) {
 	db := infra.GetDB()
 
 	// Run database migrations
-	err := db.AutoMigrate(&domain.User{})
+	err := db.AutoMigrate(&domain.User{}, &domain.BankAccount{})
 
 	auth := helper.SetupAuth(config.JwtSecret)
 	if err != nil {
@@ -48,9 +48,9 @@ func StartServer(config config.AppConfig) {
 	log.Println("✅ Database migration completed successfully")
 
 	restHandler := &rest.RestHandler{
-		App: app,
-		DB:  db,
-		Auth: auth,
+		App:    app,
+		DB:     db,
+		Auth:   auth,
 		Config: config,
 	}
 
@@ -62,4 +62,3 @@ func StartServer(config config.AppConfig) {
 func setupRoutes(restHandler *rest.RestHandler) {
 	handlers.SetupUserRoutes(restHandler)
 }
- 

@@ -315,8 +315,37 @@ func (h *UserHandler) GetOrder(ctx *fiber.Ctx) error {
 }
 
 func (h *UserHandler) BecomeSeller(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	becomeSellerInput := dto.BecomeSellerInput{}
+	if err := ctx.BodyParser(&becomeSellerInput); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	updatedUser, token, err := h.userService.BecomeSeller(user.ID, becomeSellerInput)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	// Create user response without password
+	userResponse := fiber.Map{
+		"id":         updatedUser.ID,
+		"first_name": updatedUser.FirstName,
+		"last_name":  updatedUser.LastName,
+		"email":      updatedUser.Email,
+		"phone":      updatedUser.Phone,
+		"user_type":  updatedUser.UserType,
+		"verified":   updatedUser.Verified,
+		"created_at": updatedUser.CreatedAt,
+		"updated_at": updatedUser.UpdatedAt,
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Become seller successfully",
+		"user":    userResponse,
+		"token":   token,
 	})
 }
 

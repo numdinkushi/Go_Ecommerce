@@ -161,22 +161,22 @@ func (s UserService) isVerifiedUser(id uint) bool {
 func (s UserService) GetVerificationCode(id uint) error {
 	//1. check if user is verified
 	if s.isVerifiedUser(id) {
-		return  errors.New("user is already verified")
+		return errors.New("user is already verified")
 	}
 	//2. if not verified, generate a verification code
 	verificationCode, err := s.Auth.GenerateVerificationCode()
 	if err != nil {
-		return  errors.New("failed to generate verification code")
+		return errors.New("failed to generate verification code")
 	}
 	user, err := s.Repo.FindUserByID(id)
 	if err != nil {
-		return  errors.New("failed to find user")
+		return errors.New("failed to find user")
 	}
 	user.Code = verificationCode
 	user.Expiry = time.Now().Add(time.Minute * 10)
 	_, err = s.Repo.UpdateUser(id, *user)
 	if err != nil {
-		return  errors.New("failed to update user")
+		return errors.New("failed to update user")
 	}
 
 	//send sms or email to user with verification code
@@ -250,10 +250,54 @@ func (s UserService) GetOrder(user interface{}) (*domain.User, error) {
 	return &domain.User{}, nil
 }
 
-func (s UserService) BecomeSeller(id uint, user interface{}) (*domain.User, error) {
-	//perform some db operation
-	//business logic
-	return &domain.User{}, nil
+func (s UserService) BecomeSeller(id uint, seller dto.BecomeSellerInput) (*domain.User, string, error) {
+	// find existing user
+	user, err := s.Repo.FindUserByID(id)
+	if err != nil {
+		return nil, "", errors.New("failed to find user")
+	}
+
+	// check if already a seller and return error
+	if user.UserType == "seller" {
+		return nil, "", errors.New("user is already a seller")
+	}
+
+	// update user
+	user.UserType = "seller"
+	user.FirstName = seller.FirstName
+	user.LastName = seller.LastName
+	user.Phone = seller.PhoneNumber
+
+	updatedUser, err := s.Repo.UpdateUser(id, *user)
+	if err != nil {
+		log.Printf("Error updating user to seller: %v", err)
+		return nil, "", errors.New("failed to update user: " + err.Error())
+	}
+
+	// create bank account information
+	bankAccount := &domain.BankAccount{
+		UserId:            id,
+		BankName:          seller.PaymentType,
+		BankAccountNumber: seller.BankAccountNumber,
+		BankCode:          seller.BankCode,
+	}
+
+	log.Printf("Attempting to create bank account for user %d: %+v", id, bankAccount)
+	createdBankAccount, err := s.Repo.CreateBankAccount(bankAccount)
+	if err != nil {
+		log.Printf("Error creating bank account: %v", err)
+		return nil, "", errors.New("failed to create bank account: " + err.Error())
+	}
+	log.Printf("Bank account created successfully: ID=%d", createdBankAccount.ID)
+
+	// generate new token
+	token, err := s.Auth.GenerateToken(updatedUser.ID, updatedUser.Email, updatedUser.UserType)
+	if err != nil {
+		return nil, "", errors.New("failed to generate token")
+	}
+
+	// return updated user and new token
+	return &updatedUser, token, nil
 }
 
 func (s UserService) CreateCart(id uint, user interface{}) (*domain.User, error) {
