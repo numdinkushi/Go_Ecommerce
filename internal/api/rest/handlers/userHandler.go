@@ -20,12 +20,12 @@ type UserHandler struct {
 	config      config.AppConfig
 }
 
-func SetupUserRoutes(restHandler *rest.RestHandler) {
+func SetupUserRoutes(restHandler *rest.RestHandler, bankService *service.BankService) {
 	app := restHandler.App
 
 	//create an instance of user repository and inject to service
 	userRepo := repository.NewUserRepository(restHandler.DB)
-	userService := service.NewUserService(userRepo, restHandler.Auth, restHandler.Config)
+	userService := service.NewUserService(userRepo, restHandler.Auth, restHandler.Config, bankService)
 	handler := UserHandler{
 		userService: userService,
 		auth:        restHandler.Auth,

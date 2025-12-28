@@ -7,6 +7,8 @@ import (
 	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/infra"
+	"go-ecommerce-app/internal/service"
+	"go-ecommerce-app/pkg/external/flutterwave"
 	"log"
 
 	"github.com/gofiber/fiber/v2"
@@ -47,6 +49,16 @@ func StartServer(config config.AppConfig) {
 	}
 	log.Println("✅ Database migration completed successfully")
 
+	// Initialize external services
+	var bankService *service.BankService
+	if config.FlutterwaveSecretKey != "" {
+		flutterwaveClient := flutterwave.NewClient(config.FlutterwaveSecretKey)
+		bankService = service.NewBankService(flutterwaveClient)
+		log.Println("✅ Bank verification service initialized (Flutterwave)")
+	} else {
+		log.Println("⚠️  FLUTTERWAVE_SECRET_KEY not set - bank verification features disabled")
+	}
+
 	restHandler := &rest.RestHandler{
 		App:    app,
 		DB:     db,
@@ -54,11 +66,12 @@ func StartServer(config config.AppConfig) {
 		Config: config,
 	}
 
-	setupRoutes(restHandler)
+	setupRoutes(restHandler, bankService)
 
 	app.Listen(config.ServerPort)
 }
 
-func setupRoutes(restHandler *rest.RestHandler) {
-	handlers.SetupUserRoutes(restHandler)
+func setupRoutes(restHandler *rest.RestHandler, bankService *service.BankService) {
+	handlers.SetupUserRoutes(restHandler, bankService)
+	handlers.SetupBankRoutes(restHandler, bankService)
 }
