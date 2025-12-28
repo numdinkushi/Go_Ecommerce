@@ -8,16 +8,19 @@ import (
 )
 
 type AppConfig struct {
-	ServerPort      string
-	DBHost          string
-	DBPort          string
-	DBUser          string
-	DBPassword      string
-	DBName          string
-	JwtSecret       string
-	TwilioAccountSid string
-	TwilioAuthToken  string
-	TwilioPhoneNumber string
+	ServerPort               string
+	DBHost                   string
+	DBPort                   string
+	DBUser                   string
+	DBPassword               string
+	DBName                   string
+	JwtSecret                string
+	TwilioAccountSid         string
+	TwilioAuthToken          string
+	TwilioPhoneNumber        string
+	FlutterwaveClientID      string
+	FlutterwaveSecretKey     string
+	FlutterwaveEncryptionKey string
 }
 
 func SetupEnv() (config AppConfig, err error) {
@@ -81,16 +84,25 @@ func SetupEnv() (config AppConfig, err error) {
 		return AppConfig{}, errors.New("TWILIO_PHONE_NUMBER is not set, env variable is not found")
 	}
 
+	flutterwaveClientID := os.Getenv("FLUTTERWAVE_CLIENT_ID")
+	flutterwaveSecretKey := os.Getenv("FLUTTERWAVE_SECRET_KEY")
+	flutterwaveEncryptionKey := os.Getenv("FLUTTERWAVE_ENCRYPTION_KEY")
+	// Note: FLUTTERWAVE_SECRET_KEY is required for bank verification features
+	// Get your keys from: https://dashboard.flutterwave.com (Settings > API Keys)
+
 	return AppConfig{
-		ServerPort:        httpPort,
-		DBHost:            dbHost,
-		DBPort:            dbPort,
-		DBUser:            dbUser,
-		DBPassword:        dbPassword,
-		DBName:            dbName,
-		JwtSecret:         jwtSecret,
-		TwilioAccountSid:  twilioAccountSid,
-		TwilioAuthToken:   twilioAuthToken,
-		TwilioPhoneNumber: twilioPhoneNumber,
+		ServerPort:               httpPort,
+		DBHost:                   dbHost,
+		DBPort:                   dbPort,
+		DBUser:                   dbUser,
+		DBPassword:               dbPassword,
+		DBName:                   dbName,
+		JwtSecret:                jwtSecret,
+		TwilioAccountSid:         twilioAccountSid,
+		TwilioAuthToken:          twilioAuthToken,
+		TwilioPhoneNumber:        twilioPhoneNumber,
+		FlutterwaveClientID:      flutterwaveClientID,
+		FlutterwaveSecretKey:     flutterwaveSecretKey,
+		FlutterwaveEncryptionKey: flutterwaveEncryptionKey,
 	}, nil
 }

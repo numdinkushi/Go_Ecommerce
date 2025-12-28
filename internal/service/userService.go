@@ -14,16 +14,18 @@ import (
 )
 
 type UserService struct {
-	Repo   repository.UserRepository
-	Auth   helper.Auth
-	Config config.AppConfig
+	Repo        repository.UserRepository
+	Auth        helper.Auth
+	Config      config.AppConfig
+	BankService *BankService
 }
 
-func NewUserService(repo repository.UserRepository, auth helper.Auth, config config.AppConfig) UserService {
+func NewUserService(repo repository.UserRepository, auth helper.Auth, config config.AppConfig, bankService *BankService) UserService {
 	return UserService{
-		Repo:   repo,
-		Auth:   auth,
-		Config: config,
+		Repo:        repo,
+		Auth:        auth,
+		Config:      config,
+		BankService: bankService,
 	}
 }
 
@@ -262,7 +264,20 @@ func (s UserService) BecomeSeller(id uint, seller dto.BecomeSellerInput) (*domai
 		return nil, "", errors.New("user is already a seller")
 	}
 
-	// update user
+	// verify bank account BEFORE updating user type - this must succeed first
+	if s.BankService == nil {
+		return nil, "", errors.New("bank verification service is not available")
+	}
+
+	log.Printf("Verifying bank account for user %d before becoming seller: AccountNumber=%s, BankCode=%s", id, seller.BankAccountNumber, seller.BankCode)
+	_, err = s.BankService.VerifyAccount(seller.BankAccountNumber, seller.BankCode)
+	if err != nil {
+		log.Printf("Bank account verification failed for user %d: %v", id, err)
+		return nil, "", errors.New("bank account verification failed: " + err.Error())
+	}
+	log.Printf("Bank account verified successfully for user %d, proceeding with seller status update", id)
+
+	// update user - only happens after successful bank verification
 	user.UserType = "seller"
 	user.FirstName = seller.FirstName
 	user.LastName = seller.LastName
@@ -282,7 +297,6 @@ func (s UserService) BecomeSeller(id uint, seller dto.BecomeSellerInput) (*domai
 		BankCode:          seller.BankCode,
 	}
 
-	log.Printf("Attempting to create bank account for user %d: %+v", id, bankAccount)
 	createdBankAccount, err := s.Repo.CreateBankAccount(bankAccount)
 	if err != nil {
 		log.Printf("Error creating bank account: %v", err)
