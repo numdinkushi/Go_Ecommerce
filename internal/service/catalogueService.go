@@ -1,0 +1,116 @@
+package service
+
+import (
+	"errors"
+	"go-ecommerce-app/config"
+	"go-ecommerce-app/internal/dto"
+	"go-ecommerce-app/internal/helper"
+	"go-ecommerce-app/internal/repository"
+)
+
+type CatalogueService struct {
+	Repo   repository.CatalogueRepository
+	Auth   helper.Auth
+	Config config.AppConfig
+}
+
+func NewCatalogueService(repo repository.CatalogueRepository, auth helper.Auth, config config.AppConfig) CatalogueService {
+	return CatalogueService{
+		Repo:   repo,
+		Auth:   auth,
+		Config: config,
+	}
+}
+
+// Category methods - to be implemented
+func (s CatalogueService) CreateCategory(sellerID uint, category dto.Category) (interface{}, error) {
+	if sellerID == 0 {
+		return nil, errors.New("seller ID is required")
+	}
+
+	createdCategory, err := s.Repo.CreateCategory(sellerID, category)
+	if err != nil {
+		return nil, err
+	}
+
+	return createdCategory, nil
+}
+
+func (s CatalogueService) GetCategories() ([]interface{}, error) {
+	categories, err := s.Repo.GetCategories()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]interface{}, len(categories))
+	for i, category := range categories {
+		result[i] = category
+	}
+	return result, nil
+}
+
+func (s CatalogueService) GetCategoryByID(id uint) (interface{}, error) {
+	category, err := s.Repo.GetCategoryByID(id)
+	if err != nil {
+		return nil, err
+	}
+	return category, nil
+}
+
+func (s CatalogueService) UpdateCategory(id uint, category dto.Category) (interface{}, error) {
+	updatedCategory, err := s.Repo.UpdateCategory(id, category)
+	if err != nil {
+		return nil, err
+	}
+	return updatedCategory, nil
+}
+
+func (s CatalogueService) DeleteCategory(id uint) error {
+	return s.Repo.DeleteCategory(id)
+}
+
+// Product methods
+func (s CatalogueService) CreateProduct(sellerID uint, product dto.Product) (interface{}, error) {
+	if sellerID == 0 {
+		return nil, errors.New("seller ID is required")
+	}
+
+	createdProduct, err := s.Repo.CreateProduct(sellerID, product)
+	if err != nil {
+		return nil, err
+	}
+	return createdProduct, nil
+}
+
+func (s CatalogueService) GetProducts() ([]interface{}, error) {
+	products, err := s.Repo.GetProducts()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]interface{}, len(products))
+	for i, product := range products {
+		result[i] = product
+	}
+	return result, nil
+}
+
+func (s CatalogueService) GetProductByID(id uint) (interface{}, error) {
+	product, err := s.Repo.GetProductByID(id)
+	if err != nil {
+		return nil, err
+	}
+	return product, nil
+}
+
+func (s CatalogueService) UpdateProduct(id uint, product dto.Product) (interface{}, error) {
+	updatedProduct, err := s.Repo.UpdateProduct(id, product)
+	if err != nil {
+		return nil, err
+	}
+	return updatedProduct, nil
+}
+
+func (s CatalogueService) DeleteProduct(id uint) error {
+	return s.Repo.DeleteProduct(id)
+}

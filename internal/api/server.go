@@ -41,7 +41,12 @@ func StartServer(config config.AppConfig) {
 	db := infra.GetDB()
 
 	// Run database migrations
-	err := db.AutoMigrate(&domain.User{}, &domain.BankAccount{})
+	err := db.AutoMigrate(
+		&domain.User{},
+		&domain.BankAccount{},
+		&domain.Category{},
+		&domain.Product{},
+	)
 
 	auth := helper.SetupAuth(config.JwtSecret)
 	if err != nil {
@@ -74,4 +79,5 @@ func StartServer(config config.AppConfig) {
 func setupRoutes(restHandler *rest.RestHandler, bankService *service.BankService) {
 	handlers.SetupUserRoutes(restHandler, bankService)
 	handlers.SetupBankRoutes(restHandler, bankService)
+	handlers.SetupCatalogueRoutes(restHandler, bankService)
 }

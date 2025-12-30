@@ -1,0 +1,273 @@
+package handlers
+
+import (
+	"go-ecommerce-app/config"
+	"go-ecommerce-app/internal/api/rest"
+	"go-ecommerce-app/internal/dto"
+	"go-ecommerce-app/internal/helper"
+	"go-ecommerce-app/internal/repository"
+	"go-ecommerce-app/internal/service"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+type CatalogueHandler struct {
+	catalogueService service.CatalogueService
+	auth             helper.Auth
+	config           config.AppConfig
+}
+
+func SetupCatalogueRoutes(restHandler *rest.RestHandler, bankService *service.BankService) {
+	app := restHandler.App
+
+	catalogueRepo := repository.NewCatalogueRepository(restHandler.DB)
+	userRepo := repository.NewUserRepository(restHandler.DB)
+	catalogueService := service.NewCatalogueService(catalogueRepo, restHandler.Auth, restHandler.Config)
+	handler := CatalogueHandler{
+		catalogueService: catalogueService,
+		auth:             restHandler.Auth,
+		config:           restHandler.Config,
+	}
+
+	// Public endpoints (no authentication required)
+	app.Get("/products", handler.GetProducts)
+	app.Get("/products/:id", handler.GetProductByID)
+	app.Get("/categories", handler.GetCategories)
+	app.Get("/categories/:id", handler.GetCategoryByID)
+
+	// Private endpoints (authentication required - seller only)
+	sellerPrivateRoutes := app.Group("/seller", restHandler.Auth.AuthorizeSeller(userRepo))
+	sellerPrivateRoutes.Post("/categories", handler.CreateCategory)
+	sellerPrivateRoutes.Patch("/categories/:id", handler.UpdateCategory)
+	sellerPrivateRoutes.Delete("/categories/:id", handler.DeleteCategory)
+	sellerPrivateRoutes.Get("/categories/:id", handler.GetCategoryByID)
+
+	sellerPrivateRoutes.Post("/products", handler.CreateProduct)
+	sellerPrivateRoutes.Get("/products", handler.GetProducts)
+	sellerPrivateRoutes.Get("/products/:id", handler.GetProductByID)
+	sellerPrivateRoutes.Put("/products/:id", handler.UpdateProduct)
+	sellerPrivateRoutes.Patch("/products/:id", handler.PatchProduct)
+	sellerPrivateRoutes.Delete("/products/:id", handler.DeleteProduct)
+}
+
+// Category Handlers
+
+func (h *CatalogueHandler) CreateCategory(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+	if user.ID == 0 {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"message": "Unauthorized",
+		})
+	}
+
+	category := dto.Category{}
+	err := ctx.BodyParser(&category)
+	if err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	createdCategory, err := h.catalogueService.CreateCategory(user.ID, category)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message":  "Category created successfully",
+		"category": createdCategory,
+	})
+}
+
+func (h *CatalogueHandler) GetCategories(ctx *fiber.Ctx) error {
+	categories, err := h.catalogueService.GetCategories()
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message":    "Categories retrieved successfully",
+		"categories": categories,
+		"count":      len(categories),
+	})
+}
+
+func (h *CatalogueHandler) GetCategoryByID(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid category ID")
+	}
+
+	category, err := h.catalogueService.GetCategoryByID(uint(id))
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message":  "Category retrieved successfully",
+		"category": category,
+	})
+}
+
+func (h *CatalogueHandler) UpdateCategory(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid category ID")
+	}
+
+	category := dto.Category{}
+	if err := ctx.BodyParser(&category); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	updatedCategory, err := h.catalogueService.UpdateCategory(uint(id), category)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message":  "Category updated successfully",
+		"category": updatedCategory,
+	})
+}
+
+func (h *CatalogueHandler) DeleteCategory(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid category ID")
+	}
+
+	err = h.catalogueService.DeleteCategory(uint(id))
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Category deleted successfully",
+	})
+}
+
+// Product Handlers
+
+func (h *CatalogueHandler) CreateProduct(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+	if user.ID == 0 {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"message": "Unauthorized",
+		})
+	}
+
+	product := dto.Product{}
+	err := ctx.BodyParser(&product)
+	if err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	createdProduct, err := h.catalogueService.CreateProduct(user.ID, product)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message": "Product created successfully",
+		"product": createdProduct,
+	})
+}
+
+func (h *CatalogueHandler) GetProducts(ctx *fiber.Ctx) error {
+	products, err := h.catalogueService.GetProducts()
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message":  "Products retrieved successfully",
+		"products": products,
+		"count":    len(products),
+	})
+}
+
+func (h *CatalogueHandler) GetProductByID(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	product, err := h.catalogueService.GetProductByID(uint(id))
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Product retrieved successfully",
+		"product": product,
+	})
+}
+
+func (h *CatalogueHandler) UpdateProduct(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	product := dto.Product{}
+	if err := ctx.BodyParser(&product); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	updatedProduct, err := h.catalogueService.UpdateProduct(uint(id), product)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Product updated successfully",
+		"product": updatedProduct,
+	})
+}
+
+func (h *CatalogueHandler) PatchProduct(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	product := dto.Product{}
+	if err := ctx.BodyParser(&product); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	updatedProduct, err := h.catalogueService.UpdateProduct(uint(id), product)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Product updated successfully",
+		"product": updatedProduct,
+	})
+}
+
+func (h *CatalogueHandler) DeleteProduct(ctx *fiber.Ctx) error {
+	id, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	err = h.catalogueService.DeleteProduct(uint(id))
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Product deleted successfully",
+	})
+}

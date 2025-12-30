@@ -159,14 +159,24 @@ func (h *UserHandler) UpdateUser(ctx *fiber.Ctx) error {
 		return helper.HandleValidationError(ctx, "Invalid user ID")
 	}
 
-	updateData := dto.UserUpdate{}
-	if err := ctx.BodyParser(&updateData); err != nil {
+	var body struct {
+		dto.UserUpdate
+		UserType *string `json:"user_type,omitempty"`
+	}
+	if err := ctx.BodyParser(&body); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": "Invalid request body",
 		})
 	}
 
-	updatedUser, err := h.userService.UpdateUser(uint(id), updateData)
+	if body.UserType != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "user_type cannot be updated through this endpoint",
+			"error":   "To become a seller, please use the /become-seller endpoint which includes required verification steps",
+		})
+	}
+
+	updatedUser, err := h.userService.UpdateUser(uint(id), body.UserUpdate)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}

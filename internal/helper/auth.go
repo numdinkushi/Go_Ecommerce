@@ -156,3 +156,43 @@ func (a Auth) GetCurrentUser(ctx *fiber.Ctx) domain.User {
 func (a Auth) GenerateVerificationCode() (int, error) {
 	return RandomNumbers(6)
 }
+
+func (a Auth) AuthorizeSeller(userRepo interface {
+	FindUserByID(id uint) (*domain.User, error)
+}) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		authHeader := ctx.Get("Authorization")
+		tokenUser, err := a.VerifyToken(authHeader)
+		if err != nil {
+			return ctx.Status(401).JSON(fiber.Map{
+				"message": "authorization failed",
+				"reason":  err.Error(),
+			})
+		}
+
+		if tokenUser.ID == 0 {
+			return ctx.Status(401).JSON(fiber.Map{
+				"message": "authorization failed",
+				"reason":  "invalid token",
+			})
+		}
+
+		dbUser, err := userRepo.FindUserByID(tokenUser.ID)
+		if err != nil {
+			return ctx.Status(401).JSON(fiber.Map{
+				"message": "authorization failed",
+				"reason":  "user not found",
+			})
+		}
+
+		if strings.ToLower(strings.TrimSpace(dbUser.UserType)) != domain.SELLER {
+			return ctx.Status(401).JSON(fiber.Map{
+				"message": "authorization failed",
+				"reason":  "please join seller program to manage products",
+			})
+		}
+
+		ctx.Locals("user", *dbUser)
+		return ctx.Next()
+	}
+}
