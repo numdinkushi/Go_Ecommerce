@@ -12,14 +12,15 @@ import (
 type CatalogueRepository interface {
 	// Category methods
 	CreateCategory(sellerID uint, category dto.Category) (*domain.Category, error)
-	GetCategories() ([]domain.Category, error)
+	GetCategories(query dto.CategoryQuery) ([]domain.Category, int64, error)
 	GetCategoryByID(id uint) (*domain.Category, error)
 	UpdateCategory(id uint, category dto.Category) (*domain.Category, error)
+	CountProductsByCategoryID(categoryID uint) (int64, error)
 	DeleteCategory(id uint) error
 
 	// Product methods
 	CreateProduct(sellerID uint, product dto.Product) (*domain.Product, error)
-	GetProducts() ([]domain.Product, error)
+	GetProducts(query dto.ProductQuery) ([]domain.Product, int64, error)
 	GetProductByID(id uint) (*domain.Product, error)
 	UpdateProduct(id uint, product dto.Product) (*domain.Product, error)
 	DeleteProduct(id uint) error
@@ -57,13 +58,44 @@ func (r *catalogueRepository) CreateCategory(sellerID uint, category dto.Categor
 	return &categoryDomain, nil
 }
 
-func (r *catalogueRepository) GetCategories() ([]domain.Category, error) {
+func (r *catalogueRepository) GetCategories(query dto.CategoryQuery) ([]domain.Category, int64, error) {
 	var categories []domain.Category
-	err := r.DB.Find(&categories).Error
-	if err != nil {
-		return nil, err
+	var total int64
+
+	db := r.DB.Model(&domain.Category{})
+
+	if query.Search != "" {
+		searchPattern := "%" + query.Search + "%"
+		db = db.Where("name ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
 	}
-	return categories, nil
+
+	if query.Beginning != nil {
+		db = db.Where("created_at >= ?", *query.Beginning)
+	}
+
+	if query.Ending != nil {
+		db = db.Where("created_at <= ?", *query.Ending)
+	}
+
+	if query.ParentID != nil {
+		db = db.Where("parent_id = ?", *query.ParentID)
+	}
+
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	db = db.Order("display_order ASC, created_at DESC")
+
+	offset := query.GetOffset()
+	limit := query.GetLimit()
+	err := db.Offset(offset).Limit(limit).Find(&categories).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return categories, total, nil
 }
 
 func (r *catalogueRepository) GetCategoryByID(id uint) (*domain.Category, error) {
@@ -103,6 +135,12 @@ func (r *catalogueRepository) UpdateCategory(id uint, category dto.Category) (*d
 	return &categoryDomain, nil
 }
 
+func (r *catalogueRepository) CountProductsByCategoryID(categoryID uint) (int64, error) {
+	var count int64
+	err := r.DB.Model(&domain.Product{}).Where("category_id = ?", categoryID).Count(&count).Error
+	return count, err
+}
+
 func (r *catalogueRepository) DeleteCategory(id uint) error {
 	return r.DB.Delete(&domain.Category{}, id).Error
 }
@@ -130,13 +168,40 @@ func (r *catalogueRepository) CreateProduct(sellerID uint, product dto.Product) 
 	return &productDomain, nil
 }
 
-func (r *catalogueRepository) GetProducts() ([]domain.Product, error) {
+func (r *catalogueRepository) GetProducts(query dto.ProductQuery) ([]domain.Product, int64, error) {
 	var products []domain.Product
-	err := r.DB.Find(&products).Error
-	if err != nil {
-		return nil, err
+	var total int64
+
+	db := r.DB.Model(&domain.Product{})
+
+	if query.Search != "" {
+		searchPattern := "%" + query.Search + "%"
+		db = db.Where("name ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
 	}
-	return products, nil
+
+	if query.Beginning != nil {
+		db = db.Where("created_at >= ?", *query.Beginning)
+	}
+
+	if query.Ending != nil {
+		db = db.Where("created_at <= ?", *query.Ending)
+	}
+
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	db = db.Order("created_at DESC")
+
+	offset := query.GetOffset()
+	limit := query.GetLimit()
+	err := db.Offset(offset).Limit(limit).Find(&products).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return products, total, nil
 }
 
 func (r *catalogueRepository) GetProductByID(id uint) (*domain.Product, error) {
