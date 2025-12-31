@@ -16,4 +16,3 @@ type Product struct {
 	Stock       int     `json:"stock,omitempty"`
 	ImageURL    string  `json:"image_url,omitempty"`
 }
-

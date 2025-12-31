@@ -39,11 +39,11 @@ func NewCatalogueRepository(db *gorm.DB) CatalogueRepository {
 
 func (r *catalogueRepository) CreateCategory(sellerID uint, category dto.Category) (*domain.Category, error) {
 	categoryDomain := domain.Category{
-		Name:        category.Name,
-		Description: category.Description,
-		SellerID:    sellerID,
-		ParentID:    category.ParentID,
-		ImageURL:    category.ImageURL,
+		Name:         category.Name,
+		Description:  category.Description,
+		SellerID:     sellerID,
+		ParentID:     category.ParentID,
+		ImageURL:     category.ImageURL,
 		DisplayOrder: category.DisplayOrder,
 	}
 
