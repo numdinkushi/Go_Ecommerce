@@ -42,8 +42,9 @@ func (r *catalogueRepository) CreateCategory(sellerID uint, category dto.Categor
 		Name:        category.Name,
 		Description: category.Description,
 		SellerID:    sellerID,
-		ParentID:    0,
-		ImageURL:    "",
+		ParentID:    category.ParentID,
+		ImageURL:    category.ImageURL,
+		DisplayOrder: category.DisplayOrder,
 	}
 
 	err := r.DB.Create(&categoryDomain).Error
@@ -85,6 +86,13 @@ func (r *catalogueRepository) UpdateCategory(id uint, category dto.Category) (*d
 	if category.Description != "" {
 		categoryDomain.Description = category.Description
 	}
+	if category.ParentID != nil {
+		categoryDomain.ParentID = category.ParentID
+	}
+	if category.ImageURL != "" {
+		categoryDomain.ImageURL = category.ImageURL
+	}
+	categoryDomain.DisplayOrder = category.DisplayOrder
 
 	err = r.DB.Model(&categoryDomain).Clauses(clause.Returning{}).Updates(categoryDomain).Error
 	if err != nil {
