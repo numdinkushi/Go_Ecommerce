@@ -7,6 +7,7 @@ import (
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
 	"go-ecommerce-app/internal/service"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -80,15 +81,44 @@ func (h *CatalogueHandler) CreateCategory(ctx *fiber.Ctx) error {
 }
 
 func (h *CatalogueHandler) GetCategories(ctx *fiber.Ctx) error {
-	categories, err := h.catalogueService.GetCategories()
+	query := dto.CategoryQuery{}
+
+	if err := ctx.QueryParser(&query); err != nil {
+		return helper.HandleValidationError(ctx, "Invalid query parameters")
+	}
+
+	if query.Take < 1 {
+		query.Take = 10
+	}
+	if query.Skip < 0 {
+		query.Skip = 0
+	}
+
+	if beginningStr := ctx.Query("beginning"); beginningStr != "" {
+		beginning, err := time.Parse(time.RFC3339, beginningStr)
+		if err != nil {
+			return helper.HandleValidationError(ctx, "Invalid beginning date format. Use ISO 8601 format (e.g., 2024-01-01T00:00:00Z)")
+		}
+		query.Beginning = &beginning
+	}
+
+	if endingStr := ctx.Query("ending"); endingStr != "" {
+		ending, err := time.Parse(time.RFC3339, endingStr)
+		if err != nil {
+			return helper.HandleValidationError(ctx, "Invalid ending date format. Use ISO 8601 format (e.g., 2024-02-01T00:00:00Z)")
+		}
+		query.Ending = &ending
+	}
+
+	result, err := h.catalogueService.GetCategories(query)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message":    "Categories retrieved successfully",
-		"categories": categories,
-		"count":      len(categories),
+		"data":       result.Data,
+		"pagination": result.Pagination,
 	})
 }
 
@@ -179,15 +209,44 @@ func (h *CatalogueHandler) CreateProduct(ctx *fiber.Ctx) error {
 }
 
 func (h *CatalogueHandler) GetProducts(ctx *fiber.Ctx) error {
-	products, err := h.catalogueService.GetProducts()
+	query := dto.ProductQuery{}
+
+	if err := ctx.QueryParser(&query); err != nil {
+		return helper.HandleValidationError(ctx, "Invalid query parameters")
+	}
+
+	if query.Take < 1 {
+		query.Take = 10
+	}
+	if query.Skip < 0 {
+		query.Skip = 0
+	}
+
+	if beginningStr := ctx.Query("beginning"); beginningStr != "" {
+		beginning, err := time.Parse(time.RFC3339, beginningStr)
+		if err != nil {
+			return helper.HandleValidationError(ctx, "Invalid beginning date format. Use ISO 8601 format (e.g., 2024-01-01T00:00:00Z)")
+		}
+		query.Beginning = &beginning
+	}
+
+	if endingStr := ctx.Query("ending"); endingStr != "" {
+		ending, err := time.Parse(time.RFC3339, endingStr)
+		if err != nil {
+			return helper.HandleValidationError(ctx, "Invalid ending date format. Use ISO 8601 format (e.g., 2024-02-01T00:00:00Z)")
+		}
+		query.Ending = &ending
+	}
+
+	result, err := h.catalogueService.GetProducts(query)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message":  "Products retrieved successfully",
-		"products": products,
-		"count":    len(products),
+		"message":    "Products retrieved successfully",
+		"data":       result.Data,
+		"pagination": result.Pagination,
 	})
 }
 

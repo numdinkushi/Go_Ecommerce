@@ -47,6 +47,22 @@ func HandleDBError(ctx *fiber.Ctx, err error) error {
 		})
 	}
 
+	// Check for foreign key constraint violations
+	if strings.Contains(errMsg, "violates foreign key constraint") {
+		if strings.Contains(errMsg, "fk_categories_products") {
+			return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"message":    "Cannot delete category",
+				"error":      "This category has associated products. Please remove or reassign products before deleting the category.",
+				"error_full": errMsg,
+			})
+		}
+		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"message":    "Operation not allowed",
+			"error":      "This operation cannot be completed due to existing relationships in the database.",
+			"error_full": errMsg,
+		})
+	}
+
 	// Check for connection errors
 	if strings.Contains(errMsg, "connection refused") || strings.Contains(errMsg, "no connection") {
 		return ctx.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{

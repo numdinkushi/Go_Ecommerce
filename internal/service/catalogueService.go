@@ -36,8 +36,8 @@ func (s CatalogueService) CreateCategory(sellerID uint, category dto.Category) (
 	return createdCategory, nil
 }
 
-func (s CatalogueService) GetCategories() ([]interface{}, error) {
-	categories, err := s.Repo.GetCategories()
+func (s CatalogueService) GetCategories(query dto.CategoryQuery) (*dto.PaginatedResponse, error) {
+	categories, total, err := s.Repo.GetCategories(query)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,17 @@ func (s CatalogueService) GetCategories() ([]interface{}, error) {
 	for i, category := range categories {
 		result[i] = category
 	}
-	return result, nil
+
+	pagination := dto.PaginationMeta{
+		Take:  query.GetLimit(),
+		Skip:  query.GetOffset(),
+		Total: total,
+	}
+
+	return &dto.PaginatedResponse{
+		Data:       result,
+		Pagination: pagination,
+	}, nil
 }
 
 func (s CatalogueService) GetCategoryByID(id uint) (interface{}, error) {
@@ -66,6 +76,15 @@ func (s CatalogueService) UpdateCategory(id uint, category dto.Category) (interf
 }
 
 func (s CatalogueService) DeleteCategory(id uint) error {
+	productCount, err := s.Repo.CountProductsByCategoryID(id)
+	if err != nil {
+		return err
+	}
+
+	if productCount > 0 {
+		return errors.New("cannot delete category: category has associated products. Please remove or reassign products before deleting the category")
+	}
+
 	return s.Repo.DeleteCategory(id)
 }
 
@@ -82,8 +101,8 @@ func (s CatalogueService) CreateProduct(sellerID uint, product dto.Product) (int
 	return createdProduct, nil
 }
 
-func (s CatalogueService) GetProducts() ([]interface{}, error) {
-	products, err := s.Repo.GetProducts()
+func (s CatalogueService) GetProducts(query dto.ProductQuery) (*dto.PaginatedResponse, error) {
+	products, total, err := s.Repo.GetProducts(query)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +111,17 @@ func (s CatalogueService) GetProducts() ([]interface{}, error) {
 	for i, product := range products {
 		result[i] = product
 	}
-	return result, nil
+
+	pagination := dto.PaginationMeta{
+		Take:  query.GetLimit(),
+		Skip:  query.GetOffset(),
+		Total: total,
+	}
+
+	return &dto.PaginatedResponse{
+		Data:       result,
+		Pagination: pagination,
+	}, nil
 }
 
 func (s CatalogueService) GetProductByID(id uint) (interface{}, error) {
