@@ -16,3 +16,7 @@ type Product struct {
 	Stock       int     `json:"stock,omitempty"`
 	ImageURL    string  `json:"image_url,omitempty"`
 }
+
+type UpdateStockRequest struct {
+	Stock int `json:"stock"`
+}

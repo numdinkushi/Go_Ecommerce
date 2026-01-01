@@ -132,8 +132,17 @@ func (s CatalogueService) GetProductByID(id uint) (interface{}, error) {
 	return product, nil
 }
 
-func (s CatalogueService) UpdateProduct(id uint, product dto.Product) (interface{}, error) {
-	updatedProduct, err := s.Repo.UpdateProduct(id, product)
+func (s CatalogueService) UpdateProduct(productID uint, sellerID uint, product dto.Product) (interface{}, error) {
+	existingProduct, err := s.Repo.GetProductByID(productID)
+	if err != nil {
+		return nil, err
+	}
+
+	if existingProduct.SellerID != sellerID {
+		return nil, errors.New("unauthorized: you can only update your own products")
+	}
+
+	updatedProduct, err := s.Repo.UpdateProduct(productID, product)
 	if err != nil {
 		return nil, err
 	}

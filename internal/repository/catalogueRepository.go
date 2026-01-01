@@ -220,20 +220,39 @@ func (r *catalogueRepository) UpdateProduct(id uint, product dto.Product) (*doma
 		return nil, err
 	}
 
-	productDomain.Name = product.Name
-	if product.Description != "" {
-		productDomain.Description = product.Description
+	updateMap := make(map[string]interface{})
+
+	if product.Name != "" {
+		updateMap["name"] = product.Name
 	}
-	productDomain.Price = product.Price
-	productDomain.CategoryID = product.CategoryID
-	productDomain.Stock = product.Stock
+	if product.Description != "" {
+		updateMap["description"] = product.Description
+	}
+	if product.Price > 0 {
+		updateMap["price"] = product.Price
+	}
+	if product.CategoryID > 0 {
+		updateMap["category_id"] = product.CategoryID
+	}
+	if product.Stock >= 0 {
+		updateMap["stock"] = product.Stock
+	}
 	if product.ImageURL != "" {
-		productDomain.ImageURL = product.ImageURL
+		updateMap["image_url"] = product.ImageURL
 	}
 
-	err = r.DB.Model(&productDomain).Clauses(clause.Returning{}).Updates(productDomain).Error
+	if len(updateMap) == 0 {
+		return &productDomain, nil
+	}
+
+	err = r.DB.Model(&productDomain).Updates(updateMap).Error
 	if err != nil {
 		log.Printf("Error updating product: %v", err)
+		return nil, err
+	}
+
+	err = r.DB.First(&productDomain, id).Error
+	if err != nil {
 		return nil, err
 	}
 

@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -99,4 +100,118 @@ func HandleValidationError(ctx *fiber.Ctx, message string) error {
 		"message": message,
 		"error":   "Validation failed",
 	})
+}
+
+// HandleBodyParserError processes JSON parsing errors and returns specific field errors
+func HandleBodyParserError(ctx *fiber.Ctx, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	errMsg := err.Error()
+
+	// Check for JSON syntax errors
+	var jsonErr *json.SyntaxError
+	if errors.As(err, &jsonErr) {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid JSON format",
+			"error":   "The request body contains invalid JSON. Please check your JSON syntax.",
+			"details": errMsg,
+		})
+	}
+
+	// Check for JSON unmarshal type errors (field type mismatches)
+	var jsonTypeErr *json.UnmarshalTypeError
+	if errors.As(err, &jsonTypeErr) {
+		fieldName := jsonTypeErr.Field
+		expectedType := jsonTypeErr.Type.String()
+		actualType := "unknown"
+
+		// Convert Go type names to user-friendly names
+		switch expectedType {
+		case "int", "int64":
+			expectedType = "integer"
+			actualType = "number (decimal)"
+		case "float64":
+			expectedType = "number"
+			actualType = "string or other type"
+		case "string":
+			expectedType = "string"
+			actualType = "number or other type"
+		case "uint":
+			expectedType = "positive integer"
+			actualType = "negative number or decimal"
+		}
+
+		// Convert field name from JSON tag to readable format
+		readableFieldName := formatFieldName(fieldName)
+
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid field type",
+			"error":   "Field type mismatch",
+			"field":   readableFieldName,
+			"details": strings.Title(readableFieldName) + " must be a " + expectedType + " but received " + actualType + ".",
+		})
+	}
+
+	// Check for common error patterns in error message
+	lowerErrMsg := strings.ToLower(errMsg)
+
+	// Pattern: "cannot unmarshal X into Y"
+	if strings.Contains(lowerErrMsg, "cannot unmarshal") {
+		// Try to extract field name from error
+		if strings.Contains(lowerErrMsg, "stock") {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Invalid field type",
+				"error":   "Field type mismatch",
+				"field":   "stock",
+				"details": "Stock must be an integer (whole number), not a decimal.",
+			})
+		}
+		if strings.Contains(lowerErrMsg, "category_id") {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Invalid field type",
+				"error":   "Field type mismatch",
+				"field":   "category_id",
+				"details": "Category ID must be a positive integer, not a decimal or string.",
+			})
+		}
+		if strings.Contains(lowerErrMsg, "price") {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Invalid field type",
+				"error":   "Field type mismatch",
+				"field":   "price",
+				"details": "Price must be a number (integer or decimal).",
+			})
+		}
+	}
+
+	// Generic error response
+	return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		"message": "Invalid request body",
+		"error":   "The request body could not be parsed. Please check that all field types are correct.",
+		"details": errMsg,
+	})
+}
+
+// formatFieldName converts JSON field names to readable format
+func formatFieldName(fieldName string) string {
+	// Map common field names to readable versions
+	fieldMap := map[string]string{
+		"stock":       "stock",
+		"category_id": "category_id",
+		"categoryID":  "category_id",
+		"price":       "price",
+		"name":        "name",
+		"description": "description",
+		"image_url":   "image_url",
+		"imageURL":    "image_url",
+	}
+
+	if readable, ok := fieldMap[strings.ToLower(fieldName)]; ok {
+		return readable
+	}
+
+	// Default: return as-is
+	return fieldName
 }

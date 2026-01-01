@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"go-ecommerce-app/config"
 	"go-ecommerce-app/internal/api/rest"
 	"go-ecommerce-app/internal/dto"
@@ -64,9 +65,11 @@ func (h *CatalogueHandler) CreateCategory(ctx *fiber.Ctx) error {
 	category := dto.Category{}
 	err := ctx.BodyParser(&category)
 	if err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Invalid request body",
-		})
+		return helper.HandleBodyParserError(ctx, err)
+	}
+
+	if category.Name == "" {
+		return helper.HandleValidationError(ctx, "Field 'name' is required")
 	}
 
 	createdCategory, err := h.catalogueService.CreateCategory(user.ID, category)
@@ -192,9 +195,21 @@ func (h *CatalogueHandler) CreateProduct(ctx *fiber.Ctx) error {
 	product := dto.Product{}
 	err := ctx.BodyParser(&product)
 	if err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Invalid request body",
-		})
+		return helper.HandleBodyParserError(ctx, err)
+	}
+
+	// Validate required fields
+	if product.Name == "" {
+		return helper.HandleValidationError(ctx, "Field 'name' is required")
+	}
+	if product.Price <= 0 {
+		return helper.HandleValidationError(ctx, "Field 'price' must be greater than 0")
+	}
+	if product.CategoryID == 0 {
+		return helper.HandleValidationError(ctx, "Field 'category_id' is required and must be a valid category ID")
+	}
+	if product.Stock < 0 {
+		return helper.HandleValidationError(ctx, "Field 'stock' cannot be negative")
 	}
 
 	createdProduct, err := h.catalogueService.CreateProduct(user.ID, product)
@@ -273,14 +288,33 @@ func (h *CatalogueHandler) UpdateProduct(ctx *fiber.Ctx) error {
 		return helper.HandleValidationError(ctx, "Invalid product ID")
 	}
 
-	product := dto.Product{}
-	if err := ctx.BodyParser(&product); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Invalid request body",
+	user := h.auth.GetCurrentUser(ctx)
+	if user.ID == 0 {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"message": "Unauthorized",
 		})
 	}
 
-	updatedProduct, err := h.catalogueService.UpdateProduct(uint(id), product)
+	product := dto.Product{}
+	if err := ctx.BodyParser(&product); err != nil {
+		return helper.HandleBodyParserError(ctx, err)
+	}
+
+	// Validate required fields
+	if product.Name == "" {
+		return helper.HandleValidationError(ctx, "Field 'name' is required")
+	}
+	if product.Price <= 0 {
+		return helper.HandleValidationError(ctx, "Field 'price' must be greater than 0")
+	}
+	if product.CategoryID == 0 {
+		return helper.HandleValidationError(ctx, "Field 'category_id' is required and must be a valid category ID")
+	}
+	if product.Stock < 0 {
+		return helper.HandleValidationError(ctx, "Field 'stock' cannot be negative")
+	}
+
+	updatedProduct, err := h.catalogueService.UpdateProduct(uint(id), user.ID, product)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}
@@ -297,14 +331,58 @@ func (h *CatalogueHandler) PatchProduct(ctx *fiber.Ctx) error {
 		return helper.HandleValidationError(ctx, "Invalid product ID")
 	}
 
-	product := dto.Product{}
-	if err := ctx.BodyParser(&product); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Invalid request body",
+	user := h.auth.GetCurrentUser(ctx)
+	if user.ID == 0 {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"message": "Unauthorized",
 		})
 	}
 
-	updatedProduct, err := h.catalogueService.UpdateProduct(uint(id), product)
+	// Read body bytes once
+	bodyBytes := ctx.Body()
+	if len(bodyBytes) == 0 {
+		return helper.HandleValidationError(ctx, "Request body cannot be empty. Provide at least one field to update")
+	}
+
+	// Parse body as map to detect which fields are provided
+	var bodyMap map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
+		return helper.HandleBodyParserError(ctx, err)
+	}
+
+	if len(bodyMap) == 0 {
+		return helper.HandleValidationError(ctx, "Request body cannot be empty. Provide at least one field to update")
+	}
+
+	// Parse body into product DTO
+	product := dto.Product{}
+	if err := json.Unmarshal(bodyBytes, &product); err != nil {
+		return helper.HandleBodyParserError(ctx, err)
+	}
+
+	// For PATCH, only validate fields that are actually provided in the request
+	if _, provided := bodyMap["name"]; provided {
+		if product.Name == "" {
+			return helper.HandleValidationError(ctx, "Field 'name' cannot be empty")
+		}
+	}
+	if _, provided := bodyMap["price"]; provided {
+		if product.Price <= 0 {
+			return helper.HandleValidationError(ctx, "Field 'price' must be greater than 0")
+		}
+	}
+	if _, provided := bodyMap["category_id"]; provided {
+		if product.CategoryID == 0 {
+			return helper.HandleValidationError(ctx, "Field 'category_id' must be a valid category ID")
+		}
+	}
+	if _, provided := bodyMap["stock"]; provided {
+		if product.Stock < 0 {
+			return helper.HandleValidationError(ctx, "Field 'stock' cannot be negative")
+		}
+	}
+
+	updatedProduct, err := h.catalogueService.UpdateProduct(uint(id), user.ID, product)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}
