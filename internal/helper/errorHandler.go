@@ -49,13 +49,26 @@ func HandleDBError(ctx *fiber.Ctx, err error) error {
 
 	// Check for foreign key constraint violations
 	if strings.Contains(errMsg, "violates foreign key constraint") {
-		if strings.Contains(errMsg, "fk_categories_products") {
+		// Check if it's a product creation/update with invalid category_id
+		if strings.Contains(errMsg, "fk_categories_products") &&
+			(strings.Contains(errMsg, "insert or update on table \"products\"") ||
+				strings.Contains(errMsg, "insert or update on table 'products'")) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message":    "Invalid category",
+				"error":      "The specified category does not exist. Please provide a valid category ID.",
+				"error_full": errMsg,
+			})
+		}
+		// Check if it's a category deletion with associated products
+		if strings.Contains(errMsg, "fk_categories_products") &&
+			strings.Contains(errMsg, "delete on table \"categories\"") {
 			return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 				"message":    "Cannot delete category",
 				"error":      "This category has associated products. Please remove or reassign products before deleting the category.",
 				"error_full": errMsg,
 			})
 		}
+		// Generic foreign key violation
 		return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message":    "Operation not allowed",
 			"error":      "This operation cannot be completed due to existing relationships in the database.",
