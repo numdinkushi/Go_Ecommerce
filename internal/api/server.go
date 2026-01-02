@@ -57,6 +57,7 @@ func StartServer(config config.AppConfig) {
 		&domain.BankAccount{},
 		&domain.Category{},
 		&domain.Product{},
+		&domain.Cart{},
 	)
 
 	auth := helper.SetupAuth(config.JwtSecret)

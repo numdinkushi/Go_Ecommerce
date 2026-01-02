@@ -25,7 +25,8 @@ func SetupUserRoutes(restHandler *rest.RestHandler, bankService *service.BankSer
 
 	//create an instance of user repository and inject to service
 	userRepo := repository.NewUserRepository(restHandler.DB)
-	userService := service.NewUserService(userRepo, restHandler.Auth, restHandler.Config, bankService)
+	catalogueRepo := repository.NewCatalogueRepository(restHandler.DB)
+	userService := service.NewUserService(userRepo, catalogueRepo, restHandler.Auth, restHandler.Config, bankService)
 	handler := UserHandler{
 		userService: userService,
 		auth:        restHandler.Auth,
@@ -58,7 +59,14 @@ func SetupUserRoutes(restHandler *rest.RestHandler, bankService *service.BankSer
 	privateRoutes.Get("/payments", handler.Payments)
 	privateRoutes.Get("/reviews", handler.Reviews)
 	privateRoutes.Get("/wishlist", handler.Wishlist)
-	privateRoutes.Get("/cart", handler.Cart)
+	privateRoutes.Get("/cart/:product_id", handler.GetCartItem)
+	privateRoutes.Get("/cart", handler.GetCartItems)
+	privateRoutes.Post("/cart", handler.AddToCart)
+	privateRoutes.Patch("/cart/:product_id/increment", handler.IncrementCartItem)
+	privateRoutes.Patch("/cart/:product_id/decrement", handler.DecrementCartItem)
+	privateRoutes.Put("/cart", handler.UpdateCart)
+	privateRoutes.Delete("/cart/:product_id", handler.DeleteCartItem)
+	privateRoutes.Delete("/cart", handler.ClearCart)
 	privateRoutes.Get("/checkout", handler.Checkout)
 	privateRoutes.Get("/logout", handler.Logout)
 }
@@ -383,9 +391,187 @@ func (h *UserHandler) Wishlist(ctx *fiber.Ctx) error {
 	})
 }
 
-func (h *UserHandler) Cart(ctx *fiber.Ctx) error {
+func (h *UserHandler) GetCartItems(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	cartItems, err := h.userService.FindCartItems(user.ID)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Cart fetched successfully",
+		"message": "Cart items fetched successfully",
+		"cart":    cartItems,
+	})
+}
+
+func (h *UserHandler) GetCartItem(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	productID, err := ctx.ParamsInt("product_id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	cartItem, err := h.userService.GetCartItem(user.ID, uint(productID))
+	if err != nil {
+		if err.Error() == "cart item not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Cart item not found",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Cart item retrieved successfully",
+		"cart":    cartItem,
+	})
+}
+
+func (h *UserHandler) AddToCart(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	var request dto.CreateCartRequest
+	if err := ctx.BodyParser(&request); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	cartItem, err := h.userService.AddToCart(user.ID, request)
+	if err != nil {
+		if err.Error() == "product not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Product not found",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message": "Item added to cart successfully",
+		"cart":    cartItem,
+	})
+}
+
+func (h *UserHandler) UpdateCart(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	var request dto.UpdateCartRequest
+	if err := ctx.BodyParser(&request); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+
+	cartItem, err := h.userService.UpdateCart(user.ID, request)
+	if err != nil {
+		if err.Error() == "product ID is required" {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Product ID is required",
+			})
+		}
+		if err.Error() == "cart item not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Cart item not found",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Cart item updated successfully",
+		"cart":    cartItem,
+	})
+}
+
+func (h *UserHandler) DeleteCartItem(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	productID, err := ctx.ParamsInt("product_id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	err = h.userService.DeleteCartItem(user.ID, uint(productID))
+	if err != nil {
+		if err.Error() == "cart item not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Cart item not found",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Cart item deleted successfully",
+	})
+}
+
+func (h *UserHandler) ClearCart(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	err := h.userService.ClearCart(user.ID)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Cart cleared successfully",
+	})
+}
+
+func (h *UserHandler) IncrementCartItem(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	productID, err := ctx.ParamsInt("product_id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	cartItem, err := h.userService.IncrementCartItem(user.ID, uint(productID))
+	if err != nil {
+		if err.Error() == "cart item not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Cart item not found",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Cart item quantity incremented successfully",
+		"cart":    cartItem,
+	})
+}
+
+func (h *UserHandler) DecrementCartItem(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	productID, err := ctx.ParamsInt("product_id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid product ID")
+	}
+
+	cartItem, err := h.userService.DecrementCartItem(user.ID, uint(productID))
+	if err != nil {
+		if err.Error() == "cart item not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Cart item not found",
+			})
+		}
+		if err.Error() == "quantity cannot be less than 1. Use delete to remove item" {
+			return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"message": "Quantity cannot be less than 1. Use delete to remove item",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Cart item quantity decremented successfully",
+		"cart":    cartItem,
 	})
 }
 

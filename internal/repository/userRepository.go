@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"go-ecommerce-app/internal/domain"
 	"log"
 
@@ -16,6 +17,14 @@ type UserRepository interface {
 	UpdateUser(id uint, u domain.User) (domain.User, error)
 	DeleteUser(id uint) error
 	CreateBankAccount(bankAccount *domain.BankAccount) (*domain.BankAccount, error)
+
+	// Cart methods
+	CreateCart(cart *domain.Cart) (*domain.Cart, error)
+	FindCartByUserID(userID uint) ([]domain.Cart, error)
+	FindCartByUserIDAndProductID(userID uint, productID uint) (*domain.Cart, error)
+	UpdateCart(cart *domain.Cart) (*domain.Cart, error)
+	DeleteCartItem(userID uint, productID uint) error
+	DeleteAllCartItems(userID uint) error
 }
 
 type userRepository struct {
@@ -87,4 +96,63 @@ func (r *userRepository) CreateBankAccount(bankAccount *domain.BankAccount) (*do
 	}
 	log.Println("Bank account created successfully")
 	return bankAccount, nil
+}
+
+// Cart methods
+
+func (r *userRepository) CreateCart(cart *domain.Cart) (*domain.Cart, error) {
+	err := r.DB.Create(cart).Error
+	if err != nil {
+		log.Printf("Failed to create cart item: %v", err)
+		return nil, err
+	}
+	log.Println("Cart item created successfully")
+	return cart, nil
+}
+
+func (r *userRepository) FindCartByUserID(userID uint) ([]domain.Cart, error) {
+	var cartItems []domain.Cart
+	err := r.DB.Where("user_id = ?", userID).Find(&cartItems).Error
+	if err != nil {
+		return nil, err
+	}
+	return cartItems, nil
+}
+
+func (r *userRepository) FindCartByUserIDAndProductID(userID uint, productID uint) (*domain.Cart, error) {
+	var cartItem domain.Cart
+	err := r.DB.Where("user_id = ? AND product_id = ?", userID, productID).First(&cartItem).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cartItem, nil
+}
+
+func (r *userRepository) UpdateCart(cart *domain.Cart) (*domain.Cart, error) {
+	var updatedCart domain.Cart
+	err := r.DB.Model(&updatedCart).Clauses(clause.Returning{}).Where("id=?", cart.ID).Updates(cart).Error
+	if err != nil {
+		log.Printf("Failed to update cart item: %v", err)
+		return nil, err
+	}
+	return &updatedCart, nil
+}
+
+func (r *userRepository) DeleteCartItem(userID uint, productID uint) error {
+	result := r.DB.Where("user_id = ? AND product_id = ?", userID, productID).Delete(&domain.Cart{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("cart item not found")
+	}
+	return nil
+}
+
+func (r *userRepository) DeleteAllCartItems(userID uint) error {
+	result := r.DB.Where("user_id = ?", userID).Delete(&domain.Cart{})
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
