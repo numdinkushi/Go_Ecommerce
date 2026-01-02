@@ -12,6 +12,7 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 func StartServer(config config.AppConfig) {
@@ -37,6 +38,16 @@ func StartServer(config config.AppConfig) {
 			})
 		},
 	})
+
+	// Enable CORS
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     "*",
+		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		AllowCredentials: false,
+		ExposeHeaders:    "Content-Length",
+		MaxAge:           3600,
+	}))
 
 	db := infra.GetDB()
 
