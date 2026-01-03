@@ -224,16 +224,167 @@ func (s UserService) Profile(user interface{}) (*domain.User, error) {
 	return &domain.User{}, nil
 }
 
-func (s UserService) CreateProfile(user interface{}) (*domain.User, error) {
-	//perform some db operation
-	//business logic
-	return &domain.User{}, nil
+func (s UserService) GetProfile(userID uint) (*domain.User, error) {
+	user, err := s.Repo.FindUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
-func (s UserService) UpdateProfile(id uint, user interface{}) (*domain.User, error) {
-	//perform some db operation
-	//business logic
-	return &domain.User{}, nil
+func (s UserService) CreateProfile(userID uint, profileInput dto.ProfileInput) (*domain.User, error) {
+	// Check if profile already exists
+	existingAddress, err := s.Repo.FindAddressByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if existingAddress != nil {
+		return nil, errors.New("profile already exists, use update endpoint instead")
+	}
+
+	user, err := s.Repo.FindUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	user.FirstName = profileInput.FirstName
+	user.LastName = profileInput.LastName
+	_, err = s.Repo.UpdateUser(userID, *user)
+	if err != nil {
+		return nil, err
+	}
+
+	address := &domain.Address{
+		UserID:       userID,
+		AddressLine1: profileInput.Address.AddressLine1,
+		AddressLine2: profileInput.Address.AddressLine2,
+		City:         profileInput.Address.City,
+		State:        profileInput.Address.State,
+		Country:      profileInput.Address.Country,
+		PostalCode:   profileInput.Address.PostalCode,
+	}
+
+	err = s.Repo.CreateProfile(address)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reload user with address
+	userWithAddress, err := s.Repo.FindUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return userWithAddress, nil
+}
+
+func (s UserService) UpdateProfile(userID uint, profileInput dto.ProfileUpdateInput) (*domain.User, error) {
+	user, err := s.Repo.FindUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update user fields if provided
+	if profileInput.FirstName != nil {
+		user.FirstName = *profileInput.FirstName
+	}
+	if profileInput.LastName != nil {
+		user.LastName = *profileInput.LastName
+	}
+	_, err = s.Repo.UpdateUser(userID, *user)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if address exists, update if exists, create if not (upsert pattern)
+	existingAddress, err := s.Repo.FindAddressByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only update address if address fields are provided
+	hasAddressFields := profileInput.Address.AddressLine1 != nil ||
+		profileInput.Address.AddressLine2 != nil ||
+		profileInput.Address.City != nil ||
+		profileInput.Address.State != nil ||
+		profileInput.Address.Country != nil ||
+		profileInput.Address.PostalCode != nil
+
+	if hasAddressFields {
+		address := &domain.Address{
+			UserID: userID,
+		}
+
+		// Only set fields that are provided
+		if profileInput.Address.AddressLine1 != nil {
+			address.AddressLine1 = *profileInput.Address.AddressLine1
+		}
+		if profileInput.Address.AddressLine2 != nil {
+			address.AddressLine2 = *profileInput.Address.AddressLine2
+		}
+		if profileInput.Address.City != nil {
+			address.City = *profileInput.Address.City
+		}
+		if profileInput.Address.State != nil {
+			address.State = *profileInput.Address.State
+		}
+		if profileInput.Address.Country != nil {
+			address.Country = *profileInput.Address.Country
+		}
+		if profileInput.Address.PostalCode != nil {
+			address.PostalCode = *profileInput.Address.PostalCode
+		}
+
+		if existingAddress != nil {
+			// Update existing address - need to preserve existing values if not provided
+			address.ID = existingAddress.ID
+			if profileInput.Address.AddressLine1 == nil {
+				address.AddressLine1 = existingAddress.AddressLine1
+			}
+			if profileInput.Address.AddressLine2 == nil {
+				address.AddressLine2 = existingAddress.AddressLine2
+			}
+			if profileInput.Address.City == nil {
+				address.City = existingAddress.City
+			}
+			if profileInput.Address.State == nil {
+				address.State = existingAddress.State
+			}
+			if profileInput.Address.Country == nil {
+				address.Country = existingAddress.Country
+			}
+			if profileInput.Address.PostalCode == nil {
+				address.PostalCode = existingAddress.PostalCode
+			}
+			err = s.Repo.UpdateProfile(address)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Create new address if it doesn't exist (but all required fields must be provided)
+			if profileInput.Address.AddressLine1 == nil || profileInput.Address.City == nil ||
+				profileInput.Address.State == nil || profileInput.Address.Country == nil ||
+				profileInput.Address.PostalCode == nil {
+				return nil, errors.New("all address fields are required when creating a new address")
+			}
+			// Set defaults for optional fields
+			if profileInput.Address.AddressLine2 == nil {
+				address.AddressLine2 = ""
+			}
+			err = s.Repo.CreateProfile(address)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Reload user with address
+	userWithAddress, err := s.Repo.FindUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return userWithAddress, nil
 }
 
 func (s UserService) DeleteProfile(id uint) (*domain.User, error) {

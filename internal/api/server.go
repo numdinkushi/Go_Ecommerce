@@ -58,6 +58,7 @@ func StartServer(config config.AppConfig) {
 		&domain.Category{},
 		&domain.Product{},
 		&domain.Cart{},
+		&domain.Address{},
 	)
 
 	auth := helper.SetupAuth(config.JwtSecret)
@@ -85,7 +86,10 @@ func StartServer(config config.AppConfig) {
 
 	setupRoutes(restHandler, bankService)
 
-	app.Listen(config.ServerPort)
+	log.Printf("🚀 Server starting on port %s", config.ServerPort)
+	if err := app.Listen(config.ServerPort); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
 
 func setupRoutes(restHandler *rest.RestHandler, bankService *service.BankService) {

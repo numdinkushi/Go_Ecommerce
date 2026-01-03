@@ -41,6 +41,8 @@ func SetupUserRoutes(restHandler *rest.RestHandler, bankService *service.BankSer
 	privateRoutes := app.Group("/", restHandler.Auth.Authorize)
 	privateRoutes.Get("/users", handler.GetUsers)
 	privateRoutes.Get("/users/profile", handler.GetProfile)
+	privateRoutes.Post("/users/profile", handler.CreateProfile)
+	privateRoutes.Patch("/users/profile", handler.UpdateProfile)
 	privateRoutes.Get("/users/verify", handler.GetVerificationCode)
 	privateRoutes.Post("/users/verify", handler.Verify)
 	privateRoutes.Get("/users/:id", handler.FindUserByID)
@@ -48,9 +50,6 @@ func SetupUserRoutes(restHandler *rest.RestHandler, bankService *service.BankSer
 	privateRoutes.Delete("/users/:id", handler.DeleteUser)
 	privateRoutes.Get("/verify", handler.GetVerificationCode)
 	privateRoutes.Post("/verify", handler.Verify)
-	// privateRoutes.Get("/profile", handler.GetProfile)
-	privateRoutes.Post("/profile", handler.CreateProfile)
-	privateRoutes.Put("/profile", handler.UpdateProfile)
 	privateRoutes.Delete("/profile", handler.DeleteProfile)
 	privateRoutes.Get("/orders", handler.Orders)
 	privateRoutes.Get("/orders/:id", handler.GetOrder)
@@ -125,9 +124,21 @@ func (h *UserHandler) GetUsers(ctx *fiber.Ctx) error {
 			return helper.HandleDBError(ctx, err)
 		}
 
+		userResponse := fiber.Map{
+			"id":         user.ID,
+			"first_name": user.FirstName,
+			"last_name":  user.LastName,
+			"email":      user.Email,
+			"phone":      user.Phone,
+			"user_type":  user.UserType,
+			"verified":   user.Verified,
+			"created_at": user.CreatedAt,
+			"updated_at": user.UpdatedAt,
+		}
+
 		return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 			"message": "User found",
-			"user":    user,
+			"user":    userResponse,
 		})
 	}
 
@@ -137,9 +148,24 @@ func (h *UserHandler) GetUsers(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
+	usersResponse := make([]fiber.Map, len(users))
+	for i, user := range users {
+		usersResponse[i] = fiber.Map{
+			"id":         user.ID,
+			"first_name": user.FirstName,
+			"last_name":  user.LastName,
+			"email":      user.Email,
+			"phone":      user.Phone,
+			"user_type":  user.UserType,
+			"verified":   user.Verified,
+			"created_at": user.CreatedAt,
+			"updated_at": user.UpdatedAt,
+		}
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Users retrieved successfully",
-		"users":   users,
+		"users":   usersResponse,
 		"count":   len(users),
 	})
 }
@@ -155,9 +181,21 @@ func (h *UserHandler) FindUserByID(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
+	userResponse := fiber.Map{
+		"id":         user.ID,
+		"first_name": user.FirstName,
+		"last_name":  user.LastName,
+		"email":      user.Email,
+		"phone":      user.Phone,
+		"user_type":  user.UserType,
+		"verified":   user.Verified,
+		"created_at": user.CreatedAt,
+		"updated_at": user.UpdatedAt,
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "User found",
-		"user":    user,
+		"user":    userResponse,
 	})
 }
 
@@ -296,22 +334,189 @@ func (h *UserHandler) Verify(ctx *fiber.Ctx) error {
 
 func (h *UserHandler) GetProfile(ctx *fiber.Ctx) error {
 	user := h.auth.GetCurrentUser(ctx)
+	profile, err := h.userService.GetProfile(user.ID)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	profileResponse := fiber.Map{
+		"id":         profile.ID,
+		"first_name": profile.FirstName,
+		"last_name":  profile.LastName,
+		"email":      profile.Email,
+		"phone":      profile.Phone,
+		"user_type":  profile.UserType,
+		"verified":   profile.Verified,
+		"created_at": profile.CreatedAt,
+		"updated_at": profile.UpdatedAt,
+	}
+
+	if profile.Address.ID != 0 {
+		profileResponse["address"] = fiber.Map{
+			"id":            profile.Address.ID,
+			"address_line1": profile.Address.AddressLine1,
+			"address_line2": profile.Address.AddressLine2,
+			"city":          profile.Address.City,
+			"state":         profile.Address.State,
+			"country":       profile.Address.Country,
+			"postal_code":   profile.Address.PostalCode,
+			"created_at":    profile.Address.CreatedAt,
+			"updated_at":    profile.Address.UpdatedAt,
+		}
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "get profile",
-		"user":    user,
+		"message": "Profile retrieved successfully",
+		"profile": profileResponse,
 	})
 }
 
 func (h *UserHandler) CreateProfile(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+	profileInput := dto.ProfileInput{}
+	if err := ctx.BodyParser(&profileInput); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+			"error":   err.Error(),
+		})
+	}
 
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+	if profileInput.FirstName == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "first_name is required",
+		})
+	}
+
+	if profileInput.LastName == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "last_name is required",
+		})
+	}
+
+	if profileInput.Address.AddressLine1 == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "address.address_line1 is required",
+		})
+	}
+
+	if profileInput.Address.City == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "address.city is required",
+		})
+	}
+
+	if profileInput.Address.State == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "address.state is required",
+		})
+	}
+
+	if profileInput.Address.Country == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "address.country is required",
+		})
+	}
+
+	if profileInput.Address.PostalCode == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Validation failed",
+			"error":   "address.postal_code is required",
+		})
+	}
+
+	profile, err := h.userService.CreateProfile(user.ID, profileInput)
+	if err != nil {
+		if err.Error() == "profile already exists, use update endpoint instead" {
+			return ctx.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"message": "Profile already exists",
+				"error":   "Use PATCH /users/profile to update your profile",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	profileResponse := fiber.Map{
+		"id":         profile.ID,
+		"first_name": profile.FirstName,
+		"last_name":  profile.LastName,
+		"email":      profile.Email,
+		"phone":      profile.Phone,
+		"user_type":  profile.UserType,
+		"verified":   profile.Verified,
+		"created_at": profile.CreatedAt,
+		"updated_at": profile.UpdatedAt,
+	}
+
+	if profile.Address.ID != 0 {
+		profileResponse["address"] = fiber.Map{
+			"id":            profile.Address.ID,
+			"address_line1": profile.Address.AddressLine1,
+			"address_line2": profile.Address.AddressLine2,
+			"city":          profile.Address.City,
+			"state":         profile.Address.State,
+			"country":       profile.Address.Country,
+			"postal_code":   profile.Address.PostalCode,
+			"created_at":    profile.Address.CreatedAt,
+			"updated_at":    profile.Address.UpdatedAt,
+		}
+	}
+
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Profile created successfully",
+		"profile": profileResponse,
 	})
 }
 
 func (h *UserHandler) UpdateProfile(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+	profileInput := dto.ProfileUpdateInput{}
+	if err := ctx.BodyParser(&profileInput); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid request body",
+			"error":   err.Error(),
+		})
+	}
+
+	profile, err := h.userService.UpdateProfile(user.ID, profileInput)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	profileResponse := fiber.Map{
+		"id":         profile.ID,
+		"first_name": profile.FirstName,
+		"last_name":  profile.LastName,
+		"email":      profile.Email,
+		"phone":      profile.Phone,
+		"user_type":  profile.UserType,
+		"verified":   profile.Verified,
+		"created_at": profile.CreatedAt,
+		"updated_at": profile.UpdatedAt,
+	}
+
+	if profile.Address.ID != 0 {
+		profileResponse["address"] = fiber.Map{
+			"id":            profile.Address.ID,
+			"address_line1": profile.Address.AddressLine1,
+			"address_line2": profile.Address.AddressLine2,
+			"city":          profile.Address.City,
+			"state":         profile.Address.State,
+			"country":       profile.Address.Country,
+			"postal_code":   profile.Address.PostalCode,
+			"created_at":    profile.Address.CreatedAt,
+			"updated_at":    profile.Address.UpdatedAt,
+		}
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Profile updated successfully",
+		"profile": profileResponse,
 	})
 }
 

@@ -25,6 +25,11 @@ type UserRepository interface {
 	UpdateCart(cart *domain.Cart) (*domain.Cart, error)
 	DeleteCartItem(userID uint, productID uint) error
 	DeleteAllCartItems(userID uint) error
+
+	//Profile methods
+	FindAddressByUserID(userID uint) (*domain.Address, error)
+	CreateProfile(address *domain.Address) error
+	UpdateProfile(address *domain.Address) error
 }
 
 type userRepository struct {
@@ -49,7 +54,7 @@ func (r *userRepository) CreateUser(user *domain.User) (*domain.User, error) {
 
 func (r *userRepository) FindUserByEmail(email string) (*domain.User, error) {
 	var user domain.User
-	err := r.DB.Where("email = ?", email).First(&user).Error
+	err := r.DB.Preload("Address").Where("email = ?", email).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +63,7 @@ func (r *userRepository) FindUserByEmail(email string) (*domain.User, error) {
 
 func (r *userRepository) FindUserByID(id uint) (*domain.User, error) {
 	var user domain.User
-	err := r.DB.First(&user, id).Error
+	err := r.DB.Preload("Address").First(&user, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +72,7 @@ func (r *userRepository) FindUserByID(id uint) (*domain.User, error) {
 
 func (r *userRepository) FindAllUsers() ([]domain.User, error) {
 	var users []domain.User
-	err := r.DB.Find(&users).Error
+	err := r.DB.Preload("Address").Find(&users).Error
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +158,40 @@ func (r *userRepository) DeleteAllCartItems(userID uint) error {
 	result := r.DB.Where("user_id = ?", userID).Delete(&domain.Cart{})
 	if result.Error != nil {
 		return result.Error
+	}
+	return nil
+}
+
+// Profile methods
+
+func (r *userRepository) FindAddressByUserID(userID uint) (*domain.Address, error) {
+	var address domain.Address
+	err := r.DB.Where("user_id = ?", userID).First(&address).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // No address found, return nil without error
+		}
+		return nil, err
+	}
+	return &address, nil
+}
+
+func (r *userRepository) CreateProfile(address *domain.Address) error {
+	err := r.DB.Create(address).Error
+	if err != nil {
+		log.Printf("Failed to create profile: %v", err)
+		return err
+	}
+	log.Println("Profile created successfully")
+	return nil
+}
+
+func (r *userRepository) UpdateProfile(address *domain.Address) error {
+	var existingAddress domain.Address
+	err := r.DB.Model(&existingAddress).Clauses(clause.Returning{}).Where("user_id=?", address.UserID).Updates(address).Error
+	if err != nil {
+		log.Printf("Failed to update profile: %v", err)
+		return err
 	}
 	return nil
 }

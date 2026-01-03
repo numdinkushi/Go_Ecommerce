@@ -14,6 +14,7 @@ type User struct {
 	Phone     string    `json:"phone" gorm:"index;not null;unique"`
 	Code      int       `json:"code" gorm:"not null"`
 	Expiry    time.Time `json:"expiry"`
+	Address   Address   `json:"address" gorm:"foreignKey:UserID"`
 	Verified  bool      `json:"verified" gorm:"default:false"`
 	Password  string    `json:"password"`
 	UserType  string    `json:"user_type" gorm:"default:buyer"`
