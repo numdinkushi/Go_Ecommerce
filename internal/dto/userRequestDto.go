@@ -62,3 +62,7 @@ type ProfileUpdateInput struct {
 	LastName  *string            `json:"last_name,omitempty"`
 	Address   AddressUpdateInput `json:"address,omitempty"`
 }
+
+type CreateOrderInput struct {
+	CartItemIDs []uint `json:"cart_item_ids"`
+}
