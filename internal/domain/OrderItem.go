@@ -5,6 +5,7 @@ import "time"
 type OrderItem struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	OrderID   uint      `json:"order_id" gorm:"not null"`
+	Order     Order     `json:"order" gorm:"foreignKey:OrderID"`
 	ProductID uint      `json:"product_id" gorm:"not null"`
 	Name      string    `json:"name" gorm:"not null"`
 	ImageUrl  string    `json:"image_url"`

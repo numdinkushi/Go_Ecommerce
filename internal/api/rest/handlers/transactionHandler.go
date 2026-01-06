@@ -15,12 +15,12 @@ import (
 )
 
 type TransactionHandler struct {
-	transactionService service.TransactionService
+	transactionService *service.TransactionService
 	auth               helper.Auth
 	userService        service.UserService
 }
 
-func initializeTransactionService(db *gorm.DB, auth helper.Auth) service.TransactionService {
+func initializeTransactionService(db *gorm.DB, auth helper.Auth) *service.TransactionService {
 	transactionRepo := repository.NewTransactionRepository(db)
 	return service.NewTransactionService(transactionRepo, auth)
 }
@@ -55,7 +55,7 @@ func SetupTransactionRoutes(restHandler *rest.RestHandler, bankService *service.
 	privateRoutes.Get("/transactions/:id", handler.GetTransactionByID)
 }
 
-func NewTransactionHandler(transactionService service.TransactionService, auth helper.Auth) *TransactionHandler {
+func NewTransactionHandler(transactionService *service.TransactionService, auth helper.Auth) *TransactionHandler {
 	return &TransactionHandler{
 		transactionService: transactionService,
 		auth:               auth,

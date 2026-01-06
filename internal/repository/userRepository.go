@@ -36,6 +36,7 @@ type UserRepository interface {
 	FindOrdersByUserID(userID uint) ([]domain.Order, error)
 	FindOrderByID(orderID uint) (*domain.Order, error)
 	FindOrdersBySellerID(sellerID uint) ([]domain.Order, error)
+	FindSellerOrderDetails(sellerID uint) ([]domain.OrderItem, error)
 }
 
 type userRepository struct {
@@ -242,4 +243,18 @@ func (r *userRepository) FindOrdersBySellerID(sellerID uint) ([]domain.Order, er
 		return nil, err
 	}
 	return orders, nil
+}
+
+func (r *userRepository) FindSellerOrderDetails(sellerID uint) ([]domain.OrderItem, error) {
+	var items []domain.OrderItem
+	err := r.DB.Where("seller_id = ?", sellerID).
+		Preload("Order").
+		Preload("Order.User").
+		Preload("Order.User.Address").
+		Order("created_at DESC").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
