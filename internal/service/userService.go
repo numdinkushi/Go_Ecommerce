@@ -393,10 +393,24 @@ func (s UserService) DeleteProfile(id uint) (*domain.User, error) {
 	return &domain.User{}, nil
 }
 
-func (s UserService) Orders(user interface{}) (*domain.User, error) {
-	//perform some db operation
-	//business logic
-	return &domain.User{}, nil
+func (s UserService) FindOrdersByUserID(userID uint) ([]domain.Order, error) {
+	orders, err := s.Repo.FindOrdersByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
+func (s UserService) GetOrderByID(orderID uint, userID uint) (*domain.Order, error) {
+	order, err := s.Repo.FindOrderByID(orderID)
+	if err != nil {
+		return nil, err
+	}
+	// Verify that the order belongs to the user
+	if order.UserID != userID {
+		return nil, errors.New("order not found")
+	}
+	return order, nil
 }
 
 func (s UserService) GetOrder(user interface{}) (*domain.User, error) {
@@ -584,10 +598,81 @@ func (s UserService) DecrementCartItem(userID uint, productID uint) (*domain.Car
 	return updatedCart, nil
 }
 
-func (s UserService) CreateOrder(user interface{}) (*domain.User, error) {
-	//perform some db operation
-	//business logic
-	return &domain.User{}, nil
+func (s UserService) CreateOrder(u domain.User) (int, error) {
+	// find cart items for the user
+	cartItems, err := s.Repo.FindCartByUserID(u.ID)
+	if err != nil {
+		return 0, errors.New("failed to find cart items")
+	}
+	if len(cartItems) == 0 {
+		return 0, errors.New("cart is empty")
+	}
+
+	// find success payment reference status
+	// TODO: Implement payment verification logic
+	paymentID := "PAY12345"
+	transactionID := "12345"
+	_ = paymentID
+	_ = transactionID
+
+	// generate order reference
+	orderRef, err := helper.GenerateOrderRef(8)
+	if err != nil {
+		return 0, errors.New("failed to generate order reference")
+	}
+
+	// extract numeric part from orderRef (remove "0RD" prefix)
+	orderRefNumberUint, err := strconv.ParseUint(orderRef[3:], 10, 32)
+	if err != nil {
+		return 0, errors.New("failed to parse order reference number")
+	}
+	orderRefNumber := uint(orderRefNumberUint)
+
+	// calculate total amount from cart items
+	var totalAmount float64
+	var orderItems []domain.OrderItem
+	for _, cartItem := range cartItems {
+		totalAmount += cartItem.Price * float64(cartItem.Quantity)
+		orderItems = append(orderItems, domain.OrderItem{
+			ProductID: cartItem.ProductID,
+			Name:      cartItem.Name,
+			ImageUrl:  cartItem.ImageURL,
+			SellerId:  cartItem.SellerID,
+			Price:     cartItem.Price,
+			Quantity:  uint(cartItem.Quantity),
+		})
+	}
+
+	// create order with generated OrderRefNumber
+	order := &domain.Order{
+		UserID:         u.ID,
+		Status:         "pending",
+		Amount:         totalAmount,
+		TransactionId:  transactionID,
+		OrderRefNumber: orderRefNumber,
+		PaymentId:      paymentID,
+		Items:          orderItems,
+	}
+
+	createdOrder, err := s.Repo.CreateOrder(order)
+	if err != nil {
+		return 0, errors.New("failed to create order")
+	}
+
+	// send email to user with order details
+	// TODO: Implement email sending functionality
+	// notificationClient := notification.NewNotificationClient(s.Config)
+	// err = notificationClient.SendEmail(u.Email, "Order Confirmation", orderDetails)
+
+	// remove cart items from the cart
+	err = s.Repo.DeleteAllCartItems(u.ID)
+	if err != nil {
+		log.Printf("Warning: failed to clear cart after order creation: %v", err)
+		// Don't fail the order creation if cart clearing fails
+	}
+
+	// return order number (ID)
+	return int(createdOrder.ID), nil
 }
 
 func (s UserService) FindOrder(id uint) (*domain.User, error) {

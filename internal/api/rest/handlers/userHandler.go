@@ -51,7 +51,9 @@ func SetupUserRoutes(restHandler *rest.RestHandler, bankService *service.BankSer
 	privateRoutes.Get("/verify", handler.GetVerificationCode)
 	privateRoutes.Post("/verify", handler.Verify)
 	privateRoutes.Delete("/profile", handler.DeleteProfile)
-	privateRoutes.Get("/orders", handler.Orders)
+
+	privateRoutes.Get("/orders", handler.GetOrders)
+	privateRoutes.Post("/orders", handler.CreateOrder)
 	privateRoutes.Get("/orders/:id", handler.GetOrder)
 	privateRoutes.Post("/become-seller", handler.BecomeSeller)
 	privateRoutes.Get("/addresses", handler.Addresses)
@@ -365,6 +367,56 @@ func (h *UserHandler) GetProfile(ctx *fiber.Ctx) error {
 		}
 	}
 
+	// Include cart items
+	cartResponse := make([]fiber.Map, len(profile.Cart))
+	for i, cartItem := range profile.Cart {
+		cartResponse[i] = fiber.Map{
+			"id":         cartItem.ID,
+			"product_id": cartItem.ProductID,
+			"seller_id":  cartItem.SellerID,
+			"name":       cartItem.Name,
+			"image_url":  cartItem.ImageURL,
+			"price":      cartItem.Price,
+			"quantity":   cartItem.Quantity,
+			"created_at": cartItem.CreatedAt,
+			"updated_at": cartItem.UpdatedAt,
+		}
+	}
+	profileResponse["cart"] = cartResponse
+
+	// Include orders
+	ordersResponse := make([]fiber.Map, len(profile.Orders))
+	for i, order := range profile.Orders {
+		itemsResponse := make([]fiber.Map, len(order.Items))
+		for j, item := range order.Items {
+			itemsResponse[j] = fiber.Map{
+				"id":         item.ID,
+				"product_id": item.ProductID,
+				"name":       item.Name,
+				"image_url":  item.ImageUrl,
+				"seller_id":  item.SellerId,
+				"price":      item.Price,
+				"quantity":   item.Quantity,
+				"created_at": item.CreatedAt,
+				"updated_at": item.UpdatedAt,
+			}
+		}
+
+		ordersResponse[i] = fiber.Map{
+			"id":               order.ID,
+			"user_id":          order.UserID,
+			"status":           order.Status,
+			"amount":           order.Amount,
+			"transaction_id":   order.TransactionId,
+			"order_ref_number": order.OrderRefNumber,
+			"payment_id":       order.PaymentId,
+			"items":            itemsResponse,
+			"created_at":       order.CreatedAt,
+			"updated_at":       order.UpdatedAt,
+		}
+	}
+	profileResponse["orders"] = ordersResponse
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Profile retrieved successfully",
 		"profile": profileResponse,
@@ -525,15 +577,115 @@ func (h *UserHandler) DeleteProfile(ctx *fiber.Ctx) error {
 		"message": "Profile deleted successfully",
 	})
 }
-func (h *UserHandler) Orders(ctx *fiber.Ctx) error {
+func (h *UserHandler) GetOrders(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	orders, err := h.userService.FindOrdersByUserID(user.ID)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	ordersResponse := make([]fiber.Map, len(orders))
+	for i, order := range orders {
+		itemsResponse := make([]fiber.Map, len(order.Items))
+		for j, item := range order.Items {
+			itemsResponse[j] = fiber.Map{
+				"id":         item.ID,
+				"product_id": item.ProductID,
+				"name":       item.Name,
+				"image_url":  item.ImageUrl,
+				"seller_id":  item.SellerId,
+				"price":      item.Price,
+				"quantity":   item.Quantity,
+				"created_at": item.CreatedAt,
+				"updated_at": item.UpdatedAt,
+			}
+		}
+
+		ordersResponse[i] = fiber.Map{
+			"id":               order.ID,
+			"user_id":          order.UserID,
+			"status":           order.Status,
+			"amount":           order.Amount,
+			"transaction_id":   order.TransactionId,
+			"order_ref_number": order.OrderRefNumber,
+			"payment_id":       order.PaymentId,
+			"items":            itemsResponse,
+			"created_at":       order.CreatedAt,
+			"updated_at":       order.UpdatedAt,
+		}
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Orders fetched successfully",
+		"message": "Orders retrieved successfully",
+		"orders":  ordersResponse,
+		"count":   len(orders),
+	})
+}
+
+func (h *UserHandler) CreateOrder(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	orderID, err := h.userService.CreateOrder(user)
+	if err != nil {
+		return helper.HandleDBError(ctx, err)
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message":  "order created successfully",
+		"order_id": orderID,
 	})
 }
 
 func (h *UserHandler) GetOrder(ctx *fiber.Ctx) error {
+	user := h.auth.GetCurrentUser(ctx)
+
+	orderID, err := ctx.ParamsInt("id")
+	if err != nil {
+		return helper.HandleValidationError(ctx, "Invalid order ID")
+	}
+
+	order, err := h.userService.GetOrderByID(uint(orderID), user.ID)
+	if err != nil {
+		if err.Error() == "order not found" {
+			return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"message": "Order not found",
+			})
+		}
+		return helper.HandleDBError(ctx, err)
+	}
+
+	itemsResponse := make([]fiber.Map, len(order.Items))
+	for j, item := range order.Items {
+		itemsResponse[j] = fiber.Map{
+			"id":         item.ID,
+			"product_id": item.ProductID,
+			"name":       item.Name,
+			"image_url":  item.ImageUrl,
+			"seller_id":  item.SellerId,
+			"price":      item.Price,
+			"quantity":   item.Quantity,
+			"created_at": item.CreatedAt,
+			"updated_at": item.UpdatedAt,
+		}
+	}
+
+	orderResponse := fiber.Map{
+		"id":               order.ID,
+		"user_id":          order.UserID,
+		"status":           order.Status,
+		"amount":           order.Amount,
+		"transaction_id":   order.TransactionId,
+		"order_ref_number": order.OrderRefNumber,
+		"payment_id":       order.PaymentId,
+		"items":            itemsResponse,
+		"created_at":       order.CreatedAt,
+		"updated_at":       order.UpdatedAt,
+	}
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Order fetched successfully",
+		"message": "Order retrieved successfully",
+		"order":   orderResponse,
 	})
 }
 

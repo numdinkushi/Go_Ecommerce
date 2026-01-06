@@ -30,6 +30,11 @@ type UserRepository interface {
 	FindAddressByUserID(userID uint) (*domain.Address, error)
 	CreateProfile(address *domain.Address) error
 	UpdateProfile(address *domain.Address) error
+
+	//Order methods
+	CreateOrder(order *domain.Order) (*domain.Order, error)
+	FindOrdersByUserID(userID uint) ([]domain.Order, error)
+	FindOrderByID(orderID uint) (*domain.Order, error)
 }
 
 type userRepository struct {
@@ -63,7 +68,7 @@ func (r *userRepository) FindUserByEmail(email string) (*domain.User, error) {
 
 func (r *userRepository) FindUserByID(id uint) (*domain.User, error) {
 	var user domain.User
-	err := r.DB.Preload("Address").First(&user, id).Error
+	err := r.DB.Preload("Address").Preload("Cart").Preload("Orders.Items").First(&user, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -194,4 +199,32 @@ func (r *userRepository) UpdateProfile(address *domain.Address) error {
 		return err
 	}
 	return nil
+}
+
+func (r *userRepository) CreateOrder(order *domain.Order) (*domain.Order, error) {
+	err := r.DB.Create(order).Error
+	if err != nil {
+		log.Printf("Failed to create order: %v", err)
+		return nil, err
+	}
+	log.Println("Order created successfully")
+	return order, nil
+}
+
+func (r *userRepository) FindOrdersByUserID(userID uint) ([]domain.Order, error) {
+	var orders []domain.Order
+	err := r.DB.Preload("Items").Where("user_id = ?", userID).Order("created_at DESC").Find(&orders).Error
+	if err != nil {
+		return nil, err
+	}
+	return orders, nil
+}
+
+func (r *userRepository) FindOrderByID(orderID uint) (*domain.Order, error) {
+	var order domain.Order
+	err := r.DB.Preload("Items").First(&order, orderID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
 }

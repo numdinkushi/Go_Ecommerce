@@ -52,3 +52,12 @@ func FormatPhoneToE164(phone string) string {
 	// Default: assume Nigerian number and add +234
 	return "+234" + phone
 }
+
+// Example: GenerateOrderRef(5) returns "0RD12345"
+func GenerateOrderRef(length int) (string, error) {
+	randomNum, err := RandomNumbers(length)
+	if err != nil {
+		return "", err
+	}
+	return "0RD" + strconv.Itoa(randomNum), nil
+}

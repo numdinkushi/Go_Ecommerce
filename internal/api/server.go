@@ -59,12 +59,35 @@ func StartServer(config config.AppConfig) {
 		&domain.Product{},
 		&domain.Cart{},
 		&domain.Address{},
+		&domain.Order{},
+		&domain.OrderItem{},
 	)
 
-	auth := helper.SetupAuth(config.JwtSecret)
 	if err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
+
+	// Clean up: Drop quantity column if it exists (we use qty instead)
+	err = db.Exec(`
+		DO $$ 
+		BEGIN 
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = 'order_items' AND column_name = 'quantity'
+			) THEN
+				ALTER TABLE order_items DROP COLUMN quantity;
+				RAISE NOTICE 'Column quantity dropped (using qty instead)';
+			END IF;
+		END $$;
+	`).Error
+
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not drop quantity column: %v", err)
+	} else {
+		log.Println("✅ Database cleanup: removed duplicate quantity column")
+	}
+
+	auth := helper.SetupAuth(config.JwtSecret)
 	log.Println("✅ Database migration completed successfully")
 
 	// Initialize external services
