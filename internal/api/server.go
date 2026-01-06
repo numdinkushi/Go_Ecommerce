@@ -61,6 +61,8 @@ func StartServer(config config.AppConfig) {
 		&domain.Address{},
 		&domain.Order{},
 		&domain.OrderItem{},
+		&domain.Transaction{},
+		&domain.Payment{},
 	)
 
 	if err != nil {
@@ -119,4 +121,5 @@ func setupRoutes(restHandler *rest.RestHandler, bankService *service.BankService
 	handlers.SetupUserRoutes(restHandler, bankService)
 	handlers.SetupBankRoutes(restHandler, bankService)
 	handlers.SetupCatalogueRoutes(restHandler, bankService)
+	handlers.SetupTransactionRoutes(restHandler, bankService)
 }

@@ -413,6 +413,29 @@ func (s UserService) GetOrderByID(orderID uint, userID uint) (*domain.Order, err
 	return order, nil
 }
 
+func (s UserService) GetOrdersBySellerID(sellerID uint) ([]domain.Order, error) {
+	return s.Repo.FindOrdersBySellerID(sellerID)
+}
+
+func (s UserService) GetOrderDetailsBySellerID(orderID uint, sellerID uint) (*domain.Order, error) {
+	order, err := s.Repo.FindOrderByID(orderID)
+	if err != nil {
+		return nil, err
+	}
+	// Verify that the order has items belonging to the seller
+	hasSellerItems := false
+	for _, item := range order.Items {
+		if item.SellerId == sellerID {
+			hasSellerItems = true
+			break
+		}
+	}
+	if !hasSellerItems {
+		return nil, errors.New("order not found")
+	}
+	return order, nil
+}
+
 func (s UserService) GetOrder(user interface{}) (*domain.User, error) {
 	//perform some db operation
 	//business logic
