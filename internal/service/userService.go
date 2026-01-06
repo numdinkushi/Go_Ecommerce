@@ -224,12 +224,63 @@ func (s UserService) Profile(user interface{}) (*domain.User, error) {
 	return &domain.User{}, nil
 }
 
-func (s UserService) GetProfile(userID uint) (*domain.User, error) {
+func (s UserService) GetProfile(userID uint) (*dto.ProfileResponse, error) {
 	user, err := s.Repo.FindUserByID(userID)
 	if err != nil {
 		return nil, err
 	}
-	return user, nil
+
+	// Business logic: Transform to DTO
+	profile := &dto.ProfileResponse{
+		ID:        user.ID,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+		Email:     user.Email,
+		Phone:     user.Phone,
+		UserType:  user.UserType,
+		Verified:  user.Verified,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
+
+	// Business logic: Transform address if exists
+	if user.Address.ID != 0 {
+		profile.Address = &dto.AddressResponse{
+			ID:          user.Address.ID,
+			AddressLine1: user.Address.AddressLine1,
+			AddressLine2: user.Address.AddressLine2,
+			City:        user.Address.City,
+			State:       user.Address.State,
+			Country:     user.Address.Country,
+			PostalCode:  user.Address.PostalCode,
+			CreatedAt:   user.Address.CreatedAt,
+			UpdatedAt:   user.Address.UpdatedAt,
+		}
+	}
+
+	// Business logic: Transform cart items
+	profile.Cart = make([]dto.CartItemResponse, len(user.Cart))
+	for i, cartItem := range user.Cart {
+		profile.Cart[i] = dto.CartItemResponse{
+			ID:        cartItem.ID,
+			ProductID: cartItem.ProductID,
+			SellerID:  cartItem.SellerID,
+			Name:      cartItem.Name,
+			ImageURL:  cartItem.ImageURL,
+			Price:     cartItem.Price,
+			Quantity:  cartItem.Quantity,
+			CreatedAt: cartItem.CreatedAt,
+			UpdatedAt: cartItem.UpdatedAt,
+		}
+	}
+
+	// Business logic: Transform orders
+	profile.Orders = make([]dto.OrderResponse, len(user.Orders))
+	for i, order := range user.Orders {
+		profile.Orders[i] = s.toOrderResponse(&order)
+	}
+
+	return profile, nil
 }
 
 func (s UserService) CreateProfile(userID uint, profileInput dto.ProfileInput) (*domain.User, error) {
@@ -393,24 +444,151 @@ func (s UserService) DeleteProfile(id uint) (*domain.User, error) {
 	return &domain.User{}, nil
 }
 
-func (s UserService) FindOrdersByUserID(userID uint) ([]domain.Order, error) {
+func (s UserService) FindOrdersByUserID(userID uint) ([]dto.OrderResponse, error) {
 	orders, err := s.Repo.FindOrdersByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	return orders, nil
+
+	// Business logic: Transform to DTOs
+	responses := make([]dto.OrderResponse, len(orders))
+	for i, order := range orders {
+		responses[i] = s.toOrderResponse(&order)
+	}
+
+	return responses, nil
 }
 
-func (s UserService) GetOrderByID(orderID uint, userID uint) (*domain.Order, error) {
+func (s UserService) GetOrderByID(orderID uint, userID uint) (*dto.OrderResponse, error) {
 	order, err := s.Repo.FindOrderByID(orderID)
 	if err != nil {
 		return nil, err
 	}
-	// Verify that the order belongs to the user
+
+	// Business logic: Verify ownership
 	if order.UserID != userID {
 		return nil, errors.New("order not found")
 	}
-	return order, nil
+
+	// Business logic: Transform to DTO
+	response := s.toOrderResponse(order)
+	return &response, nil
+}
+
+func (s UserService) GetOrdersBySellerID(sellerID uint) ([]dto.SellerOrderResponse, error) {
+	orders, err := s.Repo.FindOrdersBySellerID(sellerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Business logic: Filter and transform orders
+	sellerOrders := make([]dto.SellerOrderResponse, 0)
+	for _, order := range orders {
+		// Business logic: Filter items belonging to seller
+		sellerItems := s.filterOrderItemsBySeller(order.Items, sellerID)
+		
+		// Business rule: Skip orders with no seller items
+		if len(sellerItems) == 0 {
+			continue
+		}
+
+		// Business logic: Transform to DTO
+		sellerOrders = append(sellerOrders, dto.SellerOrderResponse{
+			ID:             order.ID,
+			UserID:         order.UserID,
+			Status:         order.Status,
+			Amount:         order.Amount,
+			TransactionID:  order.TransactionId,
+			OrderRefNumber: order.OrderRefNumber,
+			PaymentID:      order.PaymentId,
+			Items:          sellerItems,
+			CreatedAt:      order.CreatedAt,
+			UpdatedAt:      order.UpdatedAt,
+		})
+	}
+
+	return sellerOrders, nil
+}
+
+func (s UserService) GetOrderDetailsBySellerID(orderID uint, sellerID uint) (*dto.SellerOrderResponse, error) {
+	order, err := s.Repo.FindOrderByID(orderID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Business logic: Filter items belonging to seller
+	sellerItems := s.filterOrderItemsBySeller(order.Items, sellerID)
+
+	// Business logic: Verify that the order has items belonging to the seller
+	if len(sellerItems) == 0 {
+		return nil, errors.New("order not found")
+	}
+
+	// Business logic: Transform to DTO
+	response := dto.SellerOrderResponse{
+		ID:             order.ID,
+		UserID:         order.UserID,
+		Status:         order.Status,
+		Amount:         order.Amount,
+		TransactionID:  order.TransactionId,
+		OrderRefNumber: order.OrderRefNumber,
+		PaymentID:      order.PaymentId,
+		Items:          sellerItems,
+		CreatedAt:      order.CreatedAt,
+		UpdatedAt:      order.UpdatedAt,
+	}
+
+	return &response, nil
+}
+
+func (s UserService) toOrderResponse(order *domain.Order) dto.OrderResponse {
+	items := make([]dto.OrderItemResponse, len(order.Items))
+	for i, item := range order.Items {
+		items[i] = dto.OrderItemResponse{
+			ID:        item.ID,
+			ProductID: item.ProductID,
+			Name:      item.Name,
+			ImageURL:  item.ImageUrl,
+			SellerID:  item.SellerId,
+			Price:     item.Price,
+			Quantity:  item.Quantity,
+			CreatedAt: item.CreatedAt,
+			UpdatedAt: item.UpdatedAt,
+		}
+	}
+
+	return dto.OrderResponse{
+		ID:             order.ID,
+		UserID:         order.UserID,
+		Status:         order.Status,
+		Amount:         order.Amount,
+		TransactionID:  order.TransactionId,
+		OrderRefNumber: order.OrderRefNumber,
+		PaymentID:      order.PaymentId,
+		Items:          items,
+		CreatedAt:      order.CreatedAt,
+		UpdatedAt:      order.UpdatedAt,
+	}
+}
+
+func (s UserService) filterOrderItemsBySeller(items []domain.OrderItem, sellerID uint) []dto.OrderItemResponse {
+	sellerItems := make([]dto.OrderItemResponse, 0)
+	for _, item := range items {
+		if item.SellerId == sellerID {
+			sellerItems = append(sellerItems, dto.OrderItemResponse{
+				ID:        item.ID,
+				ProductID: item.ProductID,
+				Name:      item.Name,
+				ImageURL:  item.ImageUrl,
+				SellerID:  item.SellerId,
+				Price:     item.Price,
+				Quantity:  item.Quantity,
+				CreatedAt: item.CreatedAt,
+				UpdatedAt: item.UpdatedAt,
+			})
+		}
+	}
+	return sellerItems
 }
 
 func (s UserService) GetOrder(user interface{}) (*domain.User, error) {
