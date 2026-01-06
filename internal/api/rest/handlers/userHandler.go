@@ -341,85 +341,9 @@ func (h *UserHandler) GetProfile(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	profileResponse := fiber.Map{
-		"id":         profile.ID,
-		"first_name": profile.FirstName,
-		"last_name":  profile.LastName,
-		"email":      profile.Email,
-		"phone":      profile.Phone,
-		"user_type":  profile.UserType,
-		"verified":   profile.Verified,
-		"created_at": profile.CreatedAt,
-		"updated_at": profile.UpdatedAt,
-	}
-
-	if profile.Address.ID != 0 {
-		profileResponse["address"] = fiber.Map{
-			"id":            profile.Address.ID,
-			"address_line1": profile.Address.AddressLine1,
-			"address_line2": profile.Address.AddressLine2,
-			"city":          profile.Address.City,
-			"state":         profile.Address.State,
-			"country":       profile.Address.Country,
-			"postal_code":   profile.Address.PostalCode,
-			"created_at":    profile.Address.CreatedAt,
-			"updated_at":    profile.Address.UpdatedAt,
-		}
-	}
-
-	// Include cart items
-	cartResponse := make([]fiber.Map, len(profile.Cart))
-	for i, cartItem := range profile.Cart {
-		cartResponse[i] = fiber.Map{
-			"id":         cartItem.ID,
-			"product_id": cartItem.ProductID,
-			"seller_id":  cartItem.SellerID,
-			"name":       cartItem.Name,
-			"image_url":  cartItem.ImageURL,
-			"price":      cartItem.Price,
-			"quantity":   cartItem.Quantity,
-			"created_at": cartItem.CreatedAt,
-			"updated_at": cartItem.UpdatedAt,
-		}
-	}
-	profileResponse["cart"] = cartResponse
-
-	// Include orders
-	ordersResponse := make([]fiber.Map, len(profile.Orders))
-	for i, order := range profile.Orders {
-		itemsResponse := make([]fiber.Map, len(order.Items))
-		for j, item := range order.Items {
-			itemsResponse[j] = fiber.Map{
-				"id":         item.ID,
-				"product_id": item.ProductID,
-				"name":       item.Name,
-				"image_url":  item.ImageUrl,
-				"seller_id":  item.SellerId,
-				"price":      item.Price,
-				"quantity":   item.Quantity,
-				"created_at": item.CreatedAt,
-				"updated_at": item.UpdatedAt,
-			}
-		}
-
-		ordersResponse[i] = fiber.Map{
-			"id":               order.ID,
-			"user_id":          order.UserID,
-			"status":           order.Status,
-			"amount":           order.Amount,
-			"transaction_id":   order.TransactionId,
-			"order_ref_number": order.OrderRefNumber,
-			"payment_id":       order.PaymentId,
-			"items":            itemsResponse,
-			"created_at":       order.CreatedAt,
-			"updated_at":       order.UpdatedAt,
-		}
-	}
-	profileResponse["orders"] = ordersResponse
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Profile retrieved successfully",
-		"profile": profileResponse,
+		"profile": profile,
 	})
 }
 
@@ -585,40 +509,9 @@ func (h *UserHandler) GetOrders(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	ordersResponse := make([]fiber.Map, len(orders))
-	for i, order := range orders {
-		itemsResponse := make([]fiber.Map, len(order.Items))
-		for j, item := range order.Items {
-			itemsResponse[j] = fiber.Map{
-				"id":         item.ID,
-				"product_id": item.ProductID,
-				"name":       item.Name,
-				"image_url":  item.ImageUrl,
-				"seller_id":  item.SellerId,
-				"price":      item.Price,
-				"quantity":   item.Quantity,
-				"created_at": item.CreatedAt,
-				"updated_at": item.UpdatedAt,
-			}
-		}
-
-		ordersResponse[i] = fiber.Map{
-			"id":               order.ID,
-			"user_id":          order.UserID,
-			"status":           order.Status,
-			"amount":           order.Amount,
-			"transaction_id":   order.TransactionId,
-			"order_ref_number": order.OrderRefNumber,
-			"payment_id":       order.PaymentId,
-			"items":            itemsResponse,
-			"created_at":       order.CreatedAt,
-			"updated_at":       order.UpdatedAt,
-		}
-	}
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Orders retrieved successfully",
-		"orders":  ordersResponse,
+		"orders":  orders,
 		"count":   len(orders),
 	})
 }
@@ -655,37 +548,9 @@ func (h *UserHandler) GetOrder(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	itemsResponse := make([]fiber.Map, len(order.Items))
-	for j, item := range order.Items {
-		itemsResponse[j] = fiber.Map{
-			"id":         item.ID,
-			"product_id": item.ProductID,
-			"name":       item.Name,
-			"image_url":  item.ImageUrl,
-			"seller_id":  item.SellerId,
-			"price":      item.Price,
-			"quantity":   item.Quantity,
-			"created_at": item.CreatedAt,
-			"updated_at": item.UpdatedAt,
-		}
-	}
-
-	orderResponse := fiber.Map{
-		"id":               order.ID,
-		"user_id":          order.UserID,
-		"status":           order.Status,
-		"amount":           order.Amount,
-		"transaction_id":   order.TransactionId,
-		"order_ref_number": order.OrderRefNumber,
-		"payment_id":       order.PaymentId,
-		"items":            itemsResponse,
-		"created_at":       order.CreatedAt,
-		"updated_at":       order.UpdatedAt,
-	}
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Order retrieved successfully",
-		"order":   orderResponse,
+		"order":   order,
 	})
 }
 

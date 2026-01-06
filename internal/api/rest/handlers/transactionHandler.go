@@ -1,10 +1,7 @@
 package handlers
 
 import (
-	"fmt"
-
 	"go-ecommerce-app/internal/api/rest"
-	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/dto"
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
@@ -41,7 +38,7 @@ func SetupTransactionRoutes(restHandler *rest.RestHandler, bankService *service.
 
 	// General authenticated routes
 	secRoute := app.Group("/", restHandler.Auth.Authorize)
-	secRoute.Get("/payment", handler.MakePayment)
+	secRoute.Post("/payment", handler.MakePayment)
 
 	// Seller-specific authenticated routes
 	sellerRoute := app.Group("/seller", restHandler.Auth.AuthorizeSeller(userRepo))
@@ -73,45 +70,14 @@ func (h *TransactionHandler) CreateTransaction(ctx *fiber.Ctx) error {
 		})
 	}
 
-	transaction := &domain.Transaction{
-		UserID:         user.ID,
-		OrderID:        transactionInput.OrderID,
-		Amount:         transactionInput.Amount,
-		Status:         "pending",
-		PaymentMethod:  transactionInput.PaymentMethod,
-		PaymentGateway: transactionInput.PaymentGateway,
-		TransactionID:  transactionInput.TransactionID,
-		PaymentID:      transactionInput.PaymentID,
-		Currency:       transactionInput.Currency,
-	}
-
-	if transaction.Currency == "" {
-		transaction.Currency = "NGN"
-	}
-
-	createdTransaction, err := h.transactionService.CreateTransaction(transaction)
+	transaction, err := h.transactionService.CreateTransaction(user.ID, transactionInput)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	transactionResponse := fiber.Map{
-		"id":              createdTransaction.ID,
-		"user_id":         createdTransaction.UserID,
-		"order_id":        createdTransaction.OrderID,
-		"amount":          createdTransaction.Amount,
-		"status":          createdTransaction.Status,
-		"payment_method":  createdTransaction.PaymentMethod,
-		"payment_gateway": createdTransaction.PaymentGateway,
-		"transaction_id":  createdTransaction.TransactionID,
-		"payment_id":      createdTransaction.PaymentID,
-		"currency":        createdTransaction.Currency,
-		"created_at":      createdTransaction.CreatedAt,
-		"updated_at":      createdTransaction.UpdatedAt,
-	}
-
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message":     "Transaction created successfully",
-		"transaction": transactionResponse,
+		"transaction": transaction,
 	})
 }
 
@@ -123,72 +89,35 @@ func (h *TransactionHandler) GetTransactions(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	transactionsResponse := make([]fiber.Map, len(transactions))
-	for i, transaction := range transactions {
-		transactionsResponse[i] = fiber.Map{
-			"id":              transaction.ID,
-			"user_id":         transaction.UserID,
-			"order_id":        transaction.OrderID,
-			"amount":          transaction.Amount,
-			"status":          transaction.Status,
-			"payment_method":  transaction.PaymentMethod,
-			"payment_gateway": transaction.PaymentGateway,
-			"transaction_id":  transaction.TransactionID,
-			"payment_id":      transaction.PaymentID,
-			"currency":        transaction.Currency,
-			"created_at":      transaction.CreatedAt,
-			"updated_at":      transaction.UpdatedAt,
-		}
-	}
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message":      "Transactions retrieved successfully",
-		"transactions": transactionsResponse,
+		"transactions": transactions,
 		"count":        len(transactions),
 	})
 }
 
 func (h *TransactionHandler) GetTransactionByID(ctx *fiber.Ctx) error {
 	user := h.auth.GetCurrentUser(ctx)
-	transactionID := ctx.Params("id")
-
-	var id uint
-	if _, err := fmt.Sscanf(transactionID, "%d", &id); err != nil {
+	transactionID, err := ctx.ParamsInt("id")
+	if err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"message": "Invalid transaction ID",
 		})
 	}
 
-	transaction, err := h.transactionService.GetTransactionByID(id)
+	transaction, err := h.transactionService.GetTransactionByIDAndUserID(uint(transactionID), user.ID)
 	if err != nil {
+		if err.Error() == "transaction not found" {
+			return ctx.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"message": "You don't have access to this transaction",
+			})
+		}
 		return helper.HandleDBError(ctx, err)
-	}
-
-	// Verify that the transaction belongs to the user
-	if transaction.UserID != user.ID {
-		return ctx.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"message": "You don't have access to this transaction",
-		})
-	}
-
-	transactionResponse := fiber.Map{
-		"id":              transaction.ID,
-		"user_id":         transaction.UserID,
-		"order_id":        transaction.OrderID,
-		"amount":          transaction.Amount,
-		"status":          transaction.Status,
-		"payment_method":  transaction.PaymentMethod,
-		"payment_gateway": transaction.PaymentGateway,
-		"transaction_id":  transaction.TransactionID,
-		"payment_id":      transaction.PaymentID,
-		"currency":        transaction.Currency,
-		"created_at":      transaction.CreatedAt,
-		"updated_at":      transaction.UpdatedAt,
 	}
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message":     "Transaction retrieved successfully",
-		"transaction": transactionResponse,
+		"transaction": transaction,
 	})
 }
 
@@ -203,46 +132,14 @@ func (h *TransactionHandler) MakePayment(ctx *fiber.Ctx) error {
 		})
 	}
 
-	// Create transaction for payment
-	transaction := &domain.Transaction{
-		UserID:         user.ID,
-		OrderID:        paymentInput.OrderID,
-		Amount:         paymentInput.Amount,
-		Status:         "pending",
-		PaymentMethod:  paymentInput.PaymentMethod,
-		PaymentGateway: paymentInput.PaymentGateway,
-		TransactionID:  paymentInput.TransactionID,
-		PaymentID:      paymentInput.PaymentID,
-		Currency:       paymentInput.Currency,
-	}
-
-	if transaction.Currency == "" {
-		transaction.Currency = "NGN"
-	}
-
-	createdTransaction, err := h.transactionService.CreateTransaction(transaction)
+	payment, err := h.transactionService.ProcessPayment(user.ID, paymentInput)
 	if err != nil {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	paymentResponse := fiber.Map{
-		"id":              createdTransaction.ID,
-		"user_id":         createdTransaction.UserID,
-		"order_id":        createdTransaction.OrderID,
-		"amount":          createdTransaction.Amount,
-		"status":          createdTransaction.Status,
-		"payment_method":  createdTransaction.PaymentMethod,
-		"payment_gateway": createdTransaction.PaymentGateway,
-		"transaction_id":  createdTransaction.TransactionID,
-		"payment_id":      createdTransaction.PaymentID,
-		"currency":        createdTransaction.Currency,
-		"created_at":      createdTransaction.CreatedAt,
-		"updated_at":      createdTransaction.UpdatedAt,
-	}
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Payment processed successfully",
-		"payment": paymentResponse,
+		"payment": payment,
 	})
 }
 
@@ -254,43 +151,9 @@ func (h *TransactionHandler) GetOrders(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	ordersResponse := make([]fiber.Map, len(orders))
-	for i, order := range orders {
-		// Filter items to only show items belonging to this seller
-		sellerItems := make([]fiber.Map, 0)
-		for _, item := range order.Items {
-			if item.SellerId == user.ID {
-				sellerItems = append(sellerItems, fiber.Map{
-					"id":         item.ID,
-					"product_id": item.ProductID,
-					"name":       item.Name,
-					"image_url":  item.ImageUrl,
-					"seller_id":  item.SellerId,
-					"price":      item.Price,
-					"quantity":   item.Quantity,
-					"created_at": item.CreatedAt,
-					"updated_at": item.UpdatedAt,
-				})
-			}
-		}
-
-		ordersResponse[i] = fiber.Map{
-			"id":               order.ID,
-			"user_id":          order.UserID,
-			"status":           order.Status,
-			"amount":           order.Amount,
-			"transaction_id":   order.TransactionId,
-			"order_ref_number": order.OrderRefNumber,
-			"payment_id":       order.PaymentId,
-			"items":            sellerItems,
-			"created_at":       order.CreatedAt,
-			"updated_at":       order.UpdatedAt,
-		}
-	}
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Orders retrieved successfully",
-		"orders":  ordersResponse,
+		"orders":  orders,
 		"count":   len(orders),
 	})
 }
@@ -314,39 +177,8 @@ func (h *TransactionHandler) GetOrderDetails(ctx *fiber.Ctx) error {
 		return helper.HandleDBError(ctx, err)
 	}
 
-	// Filter items to only show items belonging to this seller
-	sellerItems := make([]fiber.Map, 0)
-	for _, item := range order.Items {
-		if item.SellerId == user.ID {
-			sellerItems = append(sellerItems, fiber.Map{
-				"id":         item.ID,
-				"product_id": item.ProductID,
-				"name":       item.Name,
-				"image_url":  item.ImageUrl,
-				"seller_id":  item.SellerId,
-				"price":      item.Price,
-				"quantity":   item.Quantity,
-				"created_at": item.CreatedAt,
-				"updated_at": item.UpdatedAt,
-			})
-		}
-	}
-
-	orderResponse := fiber.Map{
-		"id":               order.ID,
-		"user_id":          order.UserID,
-		"status":           order.Status,
-		"amount":           order.Amount,
-		"transaction_id":   order.TransactionId,
-		"order_ref_number": order.OrderRefNumber,
-		"payment_id":       order.PaymentId,
-		"items":            sellerItems,
-		"created_at":       order.CreatedAt,
-		"updated_at":       order.UpdatedAt,
-	}
-
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Order details retrieved successfully",
-		"order":   orderResponse,
+		"order":   order,
 	})
 }
