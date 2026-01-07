@@ -21,17 +21,24 @@ type AppConfig struct {
 	FlutterwaveClientID      string
 	FlutterwaveSecretKey     string
 	FlutterwaveEncryptionKey string
+	StripeSecret             string
+	PaymentSuccessURL        string
+	PaymentCancelURL         string
 }
 
 func SetupEnv() (config AppConfig, err error) {
 	// Load .env file first to make APP_ENV available
 	godotenv.Load()
 
-	if os.Getenv("APP_ENV") == "dev" {
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "development" {
 		// .env already loaded above, but ensure it's loaded
 		godotenv.Load()
-	} else {
+	} else if appEnv == "production" {
 		godotenv.Load(".env.production")
+	} else {
+		// Default to development if APP_ENV is not set
+		godotenv.Load()
 	}
 
 	httpPort := os.Getenv("HTTP_PORT")
@@ -90,6 +97,20 @@ func SetupEnv() (config AppConfig, err error) {
 	// Note: FLUTTERWAVE_SECRET_KEY is required for bank verification features
 	// Get your keys from: https://dashboard.flutterwave.com (Settings > API Keys)
 
+	stripeSecret := os.Getenv("STRIPE_SECRET_KEY")
+	// Note: STRIPE_SECRET_KEY is optional - if not set, Stripe payment features will be disabled
+	// Get your keys from: https://dashboard.stripe.com (Developers → API Keys)
+
+	paymentSuccessURL := os.Getenv("PAYMENT_SUCCESS_URL")
+	if len(paymentSuccessURL) < 1 {
+		return AppConfig{}, errors.New("PAYMENT_SUCCESS_URL is not set, env variable is not found")
+	}
+
+	paymentCancelURL := os.Getenv("PAYMENT_CANCEL_URL")
+	if len(paymentCancelURL) < 1 {
+		return AppConfig{}, errors.New("PAYMENT_CANCEL_URL is not set, env variable is not found")
+	}
+
 	return AppConfig{
 		ServerPort:               httpPort,
 		DBHost:                   dbHost,
@@ -104,5 +125,8 @@ func SetupEnv() (config AppConfig, err error) {
 		FlutterwaveClientID:      flutterwaveClientID,
 		FlutterwaveSecretKey:     flutterwaveSecretKey,
 		FlutterwaveEncryptionKey: flutterwaveEncryptionKey,
+		StripeSecret:             stripeSecret,
+		PaymentSuccessURL:        paymentSuccessURL,
+		PaymentCancelURL:         paymentCancelURL,
 	}, nil
 }

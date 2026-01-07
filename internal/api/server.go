@@ -13,7 +13,6 @@ import (
 	stripePayment "go-ecommerce-app/pkg/external/payment/stripe"
 	"go-ecommerce-app/pkg/payment"
 	"log"
-	"os"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -126,8 +125,8 @@ func StartServer(config config.AppConfig) {
 
 func initializePaymentProviders(config config.AppConfig) {
 	// Register Stripe provider
-	if stripeKey := os.Getenv("STRIPE_SECRET_KEY"); stripeKey != "" {
-		payment.RegisterProvider(stripePayment.NewStripeProvider(stripeKey))
+	if config.StripeSecret != "" {
+		payment.RegisterProvider(stripePayment.NewStripeProvider(config.StripeSecret))
 		log.Println("✅ Stripe payment provider registered")
 	} else {
 		log.Println("⚠️  STRIPE_SECRET_KEY not set - Stripe payment features disabled")

@@ -2,23 +2,25 @@ package service
 
 import (
 	"errors"
+	"go-ecommerce-app/config"
 	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/dto"
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
 	"go-ecommerce-app/pkg/payment"
-	"os"
 )
 
 type TransactionService struct {
-	Repo repository.TransactionRepository
-	Auth helper.Auth
+	Repo   repository.TransactionRepository
+	Auth   helper.Auth
+	Config config.AppConfig
 }
 
-func NewTransactionService(repo repository.TransactionRepository, auth helper.Auth) *TransactionService {
+func NewTransactionService(repo repository.TransactionRepository, auth helper.Auth, config config.AppConfig) *TransactionService {
 	return &TransactionService{
-		Repo: repo,
-		Auth: auth,
+		Repo:   repo,
+		Auth:   auth,
+		Config: config,
 	}
 }
 
@@ -51,10 +53,34 @@ func (s *TransactionService) CreateTransaction(userID uint, input dto.CreateTran
 	return s.toTransactionResponse(createdTransaction), nil
 }
 
-func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentInput) (*dto.TransactionResponse, error) {
+func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentInput, calculatedAmount float64, successURL, cancelURL string) (*dto.TransactionResponse, error) {
 	// Validate payment gateway
 	if input.PaymentGateway == "" {
 		return nil, errors.New("payment gateway is required")
+	}
+
+	// Amount is always calculated server-side from cart items for security
+	// No client-provided amount is accepted or validated
+
+	// Check if there's an active pending payment session for this order
+	existingTransaction, err := s.Repo.FindActivePendingTransaction(userID, input.OrderID)
+	if err != nil {
+		// Handle actual errors (database connection issues, etc.)
+		return nil, err
+	}
+	if existingTransaction != nil {
+		// Active session exists - verify it's still pending with provider
+		provider, providerErr := payment.GetProvider(existingTransaction.PaymentGateway)
+		if providerErr == nil {
+			statusResp, statusErr := provider.GetPaymentStatus(existingTransaction.TransactionID)
+			if statusErr == nil && statusResp.Status == "pending" {
+				// Session is still active and pending
+				// TODO: Store checkout_url in Transaction domain to avoid recreating sessions
+				// For now, we'll create a new session to ensure we have a valid checkout URL
+				// The existing transaction will remain in DB but new one will be used
+			}
+		}
+		// Continue to create new session below (ensures we always have a valid checkout URL)
 	}
 
 	// Get payment provider
@@ -69,25 +95,16 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 		currency = "NGN"
 	}
 
-	// Get success and failure URLs from environment
-	successURL := os.Getenv("PAYMENT_SUCCESS_URL")
-	if successURL == "" {
-		successURL = "http://localhost:3000/payment/success"
-	}
-
-	failureURL := os.Getenv("PAYMENT_FAILURE_URL")
-	if failureURL == "" {
-		failureURL = "http://localhost:3000/payment/failure"
-	}
-
 	// Create payment session using provider
+	// Use calculatedAmount (server-side) instead of client-provided amount for security
+	// URLs are provided by frontend for flexibility
 	sessionReq := payment.CreatePaymentSessionRequest{
-		Amount:     input.Amount,
+		Amount:     calculatedAmount,
 		Currency:   currency,
 		UserID:     userID,
 		OrderID:    input.OrderID,
 		SuccessURL: successURL,
-		FailureURL: failureURL,
+		CancelURL:  cancelURL,
 		Metadata:   make(map[string]string),
 	}
 
@@ -97,10 +114,11 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 	}
 
 	// Create transaction record
+	// Use calculatedAmount (server-side) instead of client-provided amount for security
 	transaction := &domain.Transaction{
 		UserID:         userID,
 		OrderID:        input.OrderID,
-		Amount:         input.Amount,
+		Amount:         calculatedAmount,
 		Status:         "pending",
 		PaymentMethod:  input.PaymentMethod,
 		PaymentGateway: input.PaymentGateway,

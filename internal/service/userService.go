@@ -837,10 +837,17 @@ func (s UserService) CreateOrder(u domain.User) (int, error) {
 		return 0, errors.New("failed to create order")
 	}
 
-	// send email to user with order details
-	// TODO: Implement email sending functionality
+	// Payment-First Flow: Email is sent after order creation with verified payment
+	// Flow: POST /payment → User pays → Webhook verifies → POST /orders → Email sent here
+	// TODO: Implement SendEmail() method in notification client
+	// ✅ SEND EMAIL HERE - Order Confirmation
 	// notificationClient := notification.NewNotificationClient(s.Config)
-	// err = notificationClient.SendEmail(u.Email, "Order Confirmation", orderDetails)
+	// emailBody := buildOrderConfirmationEmail(createdOrder, u)
+	// err = notificationClient.SendEmail(u.Email, "Order Confirmation", emailBody)
+	// if err != nil {
+	// 	log.Printf("Warning: failed to send order confirmation email: %v", err)
+	// 	// Don't fail order creation if email fails
+	// }
 
 	// remove cart items from the cart
 	err = s.Repo.DeleteAllCartItems(u.ID)

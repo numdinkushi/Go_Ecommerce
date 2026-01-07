@@ -21,6 +21,8 @@ type StripeProvider struct {
 
 // NewStripeProvider creates a new Stripe payment provider
 func NewStripeProvider(secretKey string) payment.PaymentProvider {
+	// Set the global Stripe API key for package-level functions
+	stripe.Key = secretKey
 	return &StripeProvider{
 		client:    stripe.NewClient(secretKey),
 		secretKey: secretKey,
@@ -51,7 +53,7 @@ func (p *StripeProvider) CreatePaymentSession(req payment.CreatePaymentSessionRe
 			},
 		},
 		SuccessURL: stripe.String(req.SuccessURL),
-		CancelURL:  stripe.String(req.FailureURL),
+		CancelURL:  stripe.String(req.CancelURL),
 		Metadata: map[string]string{
 			"user_id":  strconv.Itoa(int(req.UserID)),
 			"order_id": strconv.Itoa(int(req.OrderID)),
@@ -64,6 +66,7 @@ func (p *StripeProvider) CreatePaymentSession(req payment.CreatePaymentSessionRe
 		}
 	}
 
+	// Use package-level function which uses the global API key set in NewStripeProvider
 	session, err := stripeSession.New(params)
 	if err != nil {
 		return nil, err
@@ -83,6 +86,7 @@ func (p *StripeProvider) CreatePaymentSession(req payment.CreatePaymentSessionRe
 
 // GetPaymentStatus retrieves the status of a Stripe checkout session
 func (p *StripeProvider) GetPaymentStatus(sessionID string) (*payment.PaymentStatusResponse, error) {
+	// Use package-level function which uses the global API key set in NewStripeProvider
 	session, err := stripeSession.Get(sessionID, nil)
 	if err != nil {
 		return nil, err

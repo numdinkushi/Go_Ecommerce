@@ -26,7 +26,7 @@ type CreatePaymentSessionRequest struct {
 	UserID     uint
 	OrderID    uint
 	SuccessURL string
-	FailureURL string
+	CancelURL  string
 	Metadata   map[string]string
 }
 
