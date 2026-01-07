@@ -19,4 +19,3 @@ type MakePaymentInput struct {
 	PaymentID      string  `json:"payment_id"`
 	Currency       string  `json:"currency"`
 }
-

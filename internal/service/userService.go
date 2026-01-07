@@ -246,15 +246,15 @@ func (s UserService) GetProfile(userID uint) (*dto.ProfileResponse, error) {
 	// Business logic: Transform address if exists
 	if user.Address.ID != 0 {
 		profile.Address = &dto.AddressResponse{
-			ID:          user.Address.ID,
+			ID:           user.Address.ID,
 			AddressLine1: user.Address.AddressLine1,
 			AddressLine2: user.Address.AddressLine2,
-			City:        user.Address.City,
-			State:       user.Address.State,
-			Country:     user.Address.Country,
-			PostalCode:  user.Address.PostalCode,
-			CreatedAt:   user.Address.CreatedAt,
-			UpdatedAt:   user.Address.UpdatedAt,
+			City:         user.Address.City,
+			State:        user.Address.State,
+			Country:      user.Address.Country,
+			PostalCode:   user.Address.PostalCode,
+			CreatedAt:    user.Address.CreatedAt,
+			UpdatedAt:    user.Address.UpdatedAt,
 		}
 	}
 
@@ -486,7 +486,7 @@ func (s UserService) GetOrdersBySellerID(sellerID uint) ([]dto.SellerOrderRespon
 	for _, order := range orders {
 		// Business logic: Filter items belonging to seller
 		sellerItems := s.filterOrderItemsBySeller(order.Items, sellerID)
-		
+
 		// Business rule: Skip orders with no seller items
 		if len(sellerItems) == 0 {
 			continue
