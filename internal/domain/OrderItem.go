@@ -13,5 +13,5 @@ type OrderItem struct {
 	Price     float64   `json:"price" gorm:"not null"`
 	Quantity  uint      `json:"quantity" gorm:"column:qty;not null"`
 	CreatedAt time.Time `json:"created_at" gorm:"default:CURRENT_TIMESTAMP"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"default:CURRENT_TIMESTAMP"` 
+	UpdatedAt time.Time `json:"updated_at" gorm:"default:CURRENT_TIMESTAMP"`
 }

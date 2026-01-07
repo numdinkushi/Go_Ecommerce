@@ -13,6 +13,7 @@ type TransactionResponse struct {
 	TransactionID  string    `json:"transaction_id"`
 	PaymentID      string    `json:"payment_id"`
 	Currency       string    `json:"currency"`
+	CheckoutURL    string    `json:"checkout_url,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }

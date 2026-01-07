@@ -2,21 +2,25 @@ package service
 
 import (
 	"errors"
+	"go-ecommerce-app/config"
 	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/dto"
 	"go-ecommerce-app/internal/helper"
 	"go-ecommerce-app/internal/repository"
+	"go-ecommerce-app/pkg/payment"
 )
 
 type TransactionService struct {
-	Repo repository.TransactionRepository
-	Auth helper.Auth
+	Repo   repository.TransactionRepository
+	Auth   helper.Auth
+	Config config.AppConfig
 }
 
-func NewTransactionService(repo repository.TransactionRepository, auth helper.Auth) *TransactionService {
+func NewTransactionService(repo repository.TransactionRepository, auth helper.Auth, config config.AppConfig) *TransactionService {
 	return &TransactionService{
-		Repo: repo,
-		Auth: auth,
+		Repo:   repo,
+		Auth:   auth,
+		Config: config,
 	}
 }
 
@@ -49,23 +53,77 @@ func (s *TransactionService) CreateTransaction(userID uint, input dto.CreateTran
 	return s.toTransactionResponse(createdTransaction), nil
 }
 
-func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentInput) (*dto.TransactionResponse, error) {
-	// Business logic: Set default currency
+func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentInput, calculatedAmount float64, successURL, cancelURL string) (*dto.TransactionResponse, error) {
+	// Validate payment gateway
+	if input.PaymentGateway == "" {
+		return nil, errors.New("payment gateway is required")
+	}
+
+	// Amount is always calculated server-side from cart items for security
+	// No client-provided amount is accepted or validated
+
+	// Check if there's an active pending payment session for this order
+	existingTransaction, err := s.Repo.FindActivePendingTransaction(userID, input.OrderID)
+	if err != nil {
+		// Handle actual errors (database connection issues, etc.)
+		return nil, err
+	}
+	if existingTransaction != nil {
+		// Active session exists - verify it's still pending with provider
+		provider, providerErr := payment.GetProvider(existingTransaction.PaymentGateway)
+		if providerErr == nil {
+			statusResp, statusErr := provider.GetPaymentStatus(existingTransaction.TransactionID)
+			if statusErr == nil && statusResp.Status == "pending" {
+				// Session is still active and pending
+				// TODO: Store checkout_url in Transaction domain to avoid recreating sessions
+				// For now, we'll create a new session to ensure we have a valid checkout URL
+				// The existing transaction will remain in DB but new one will be used
+			}
+		}
+		// Continue to create new session below (ensures we always have a valid checkout URL)
+	}
+
+	// Get payment provider
+	provider, err := payment.GetProvider(input.PaymentGateway)
+	if err != nil {
+		return nil, errors.New("payment provider not available: " + input.PaymentGateway)
+	}
+
+	// Set default currency
 	currency := input.Currency
 	if currency == "" {
 		currency = "NGN"
 	}
 
-	// Business logic: Create transaction for payment
+	// Create payment session using provider
+	// Use calculatedAmount (server-side) instead of client-provided amount for security
+	// URLs are provided by frontend for flexibility
+	sessionReq := payment.CreatePaymentSessionRequest{
+		Amount:     calculatedAmount,
+		Currency:   currency,
+		UserID:     userID,
+		OrderID:    input.OrderID,
+		SuccessURL: successURL,
+		CancelURL:  cancelURL,
+		Metadata:   make(map[string]string),
+	}
+
+	sessionResp, err := provider.CreatePaymentSession(sessionReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create transaction record
+	// Use calculatedAmount (server-side) instead of client-provided amount for security
 	transaction := &domain.Transaction{
 		UserID:         userID,
 		OrderID:        input.OrderID,
-		Amount:         input.Amount,
+		Amount:         calculatedAmount,
 		Status:         "pending",
 		PaymentMethod:  input.PaymentMethod,
 		PaymentGateway: input.PaymentGateway,
-		TransactionID:  input.TransactionID,
-		PaymentID:      input.PaymentID,
+		TransactionID:  sessionResp.SessionID,
+		PaymentID:      sessionResp.PaymentID,
 		Currency:       currency,
 	}
 
@@ -74,8 +132,11 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 		return nil, err
 	}
 
-	// Business logic: Transform to DTO
-	return s.toTransactionResponse(createdTransaction), nil
+	// Transform to DTO and include checkout URL
+	response := s.toTransactionResponse(createdTransaction)
+	response.CheckoutURL = sessionResp.CheckoutURL
+
+	return response, nil
 }
 
 func (s *TransactionService) GetTransactionsByUserID(userID uint) ([]dto.TransactionResponse, error) {
@@ -106,6 +167,84 @@ func (s *TransactionService) GetTransactionByIDAndUserID(id uint, userID uint) (
 
 	// Business logic: Transform to DTO
 	return s.toTransactionResponse(transaction), nil
+}
+
+// VerifyPaymentStatus verifies the payment status with the payment provider
+func (s *TransactionService) VerifyPaymentStatus(transactionID uint, gateway string) (*dto.TransactionResponse, error) {
+	// Get payment provider
+	provider, err := payment.GetProvider(gateway)
+	if err != nil {
+		return nil, errors.New("payment provider not available: " + gateway)
+	}
+
+	// Get transaction from DB
+	transaction, err := s.Repo.FindTransactionByID(transactionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Query provider for current status
+	statusResp, err := provider.GetPaymentStatus(transaction.TransactionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update transaction status in DB
+	transaction.Status = statusResp.Status
+	if statusResp.PaymentID != "" {
+		transaction.PaymentID = statusResp.PaymentID
+	}
+
+	updatedTransaction, err := s.Repo.UpdateTransaction(transaction)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.toTransactionResponse(updatedTransaction), nil
+}
+
+// ProcessWebhook processes a webhook event from a payment provider
+func (s *TransactionService) ProcessWebhook(gateway string, payload []byte, signature string) error {
+	// Get payment provider
+	provider, err := payment.GetProvider(gateway)
+	if err != nil {
+		return errors.New("payment provider not available: " + gateway)
+	}
+
+	// Process webhook
+	webhookEvent, err := provider.ProcessWebhook(payload, signature)
+	if err != nil {
+		return err
+	}
+
+	// Find transaction by session ID or payment ID
+	var transaction *domain.Transaction
+	if webhookEvent.SessionID != "" {
+		transaction, err = s.Repo.FindTransactionByTransactionID(webhookEvent.SessionID)
+		if err != nil {
+			transaction = nil
+		}
+	}
+
+	if transaction == nil && webhookEvent.PaymentID != "" {
+		transaction, err = s.Repo.FindTransactionByPaymentID(webhookEvent.PaymentID)
+		if err != nil {
+			transaction = nil
+		}
+	}
+
+	if transaction == nil {
+		return errors.New("transaction not found for webhook event")
+	}
+
+	// Update transaction status
+	transaction.Status = webhookEvent.Status
+	if webhookEvent.PaymentID != "" {
+		transaction.PaymentID = webhookEvent.PaymentID
+	}
+
+	_, err = s.Repo.UpdateTransaction(transaction)
+	return err
 }
 
 func (s *TransactionService) toTransactionResponse(transaction *domain.Transaction) *dto.TransactionResponse {

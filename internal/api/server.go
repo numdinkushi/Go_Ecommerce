@@ -9,6 +9,9 @@ import (
 	"go-ecommerce-app/internal/infra"
 	"go-ecommerce-app/internal/service"
 	"go-ecommerce-app/pkg/external/flutterwave"
+	flutterwavePayment "go-ecommerce-app/pkg/external/payment/flutterwave"
+	stripePayment "go-ecommerce-app/pkg/external/payment/stripe"
+	"go-ecommerce-app/pkg/payment"
 	"log"
 
 	"github.com/gofiber/fiber/v2"
@@ -92,6 +95,9 @@ func StartServer(config config.AppConfig) {
 	auth := helper.SetupAuth(config.JwtSecret)
 	log.Println("✅ Database migration completed successfully")
 
+	// Initialize payment providers
+	initializePaymentProviders(config)
+
 	// Initialize external services
 	var bankService *service.BankService
 	if config.FlutterwaveSecretKey != "" {
@@ -114,6 +120,32 @@ func StartServer(config config.AppConfig) {
 	log.Printf("🚀 Server starting on port %s", config.ServerPort)
 	if err := app.Listen(config.ServerPort); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func initializePaymentProviders(config config.AppConfig) {
+	// Register Stripe provider
+	if config.StripeSecret != "" {
+		payment.RegisterProvider(stripePayment.NewStripeProvider(config.StripeSecret))
+		log.Println("✅ Stripe payment provider registered")
+	} else {
+		log.Println("⚠️  STRIPE_SECRET_KEY not set - Stripe payment features disabled")
+	}
+
+	// Register Flutterwave payment provider
+	if flutterwaveKey := config.FlutterwaveSecretKey; flutterwaveKey != "" {
+		payment.RegisterProvider(flutterwavePayment.NewFlutterwaveProvider(flutterwaveKey))
+		log.Println("✅ Flutterwave payment provider registered")
+	} else {
+		log.Println("⚠️  FLUTTERWAVE_SECRET_KEY not set - Flutterwave payment features disabled")
+	}
+
+	// Log registered providers
+	providers := payment.ListProviders()
+	if len(providers) > 0 {
+		log.Printf("✅ Registered payment providers: %v", providers)
+	} else {
+		log.Println("⚠️  No payment providers registered")
 	}
 }
 

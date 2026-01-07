@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"go-ecommerce-app/internal/domain"
 	"go-ecommerce-app/internal/dto"
@@ -13,6 +14,9 @@ type TransactionRepository interface {
 	FindTransactionByID(id uint) (*domain.Transaction, error)
 	FindTransactionsByUserID(userID uint) ([]domain.Transaction, error)
 	FindTransactionByOrderID(orderID uint) (*domain.Transaction, error)
+	FindTransactionByTransactionID(transactionID string) (*domain.Transaction, error)
+	FindTransactionByPaymentID(paymentID string) (*domain.Transaction, error)
+	FindActivePendingTransaction(userID uint, orderID uint) (*domain.Transaction, error)
 	UpdateTransaction(transaction *domain.Transaction) (*domain.Transaction, error)
 	FindOrderById(uId uint, id uint) (dto.SellerOrderDetails, error)
 }
@@ -55,6 +59,41 @@ func (r *transactionRepository) FindTransactionByOrderID(orderID uint) (*domain.
 	var transaction domain.Transaction
 	err := r.DB.Where("order_id = ?", orderID).First(&transaction).Error
 	if err != nil {
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+func (r *transactionRepository) FindTransactionByTransactionID(transactionID string) (*domain.Transaction, error) {
+	var transaction domain.Transaction
+	err := r.DB.Where("transaction_id = ?", transactionID).First(&transaction).Error
+	if err != nil {
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+func (r *transactionRepository) FindTransactionByPaymentID(paymentID string) (*domain.Transaction, error) {
+	var transaction domain.Transaction
+	err := r.DB.Where("payment_id = ?", paymentID).First(&transaction).Error
+	if err != nil {
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+func (r *transactionRepository) FindActivePendingTransaction(userID uint, orderID uint) (*domain.Transaction, error) {
+	var transaction domain.Transaction
+	err := r.DB.Where("user_id = ? AND order_id = ? AND status = ?", userID, orderID, "pending").
+		Order("created_at DESC").
+		First(&transaction).Error
+	if err != nil {
+		// "record not found" is expected when no pending transaction exists
+		// Return nil, nil instead of error to avoid log noise
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		// Return actual errors (database connection issues, etc.)
 		return nil, err
 	}
 	return &transaction, nil
