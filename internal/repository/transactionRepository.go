@@ -14,9 +14,11 @@ type TransactionRepository interface {
 	FindTransactionByID(id uint) (*domain.Transaction, error)
 	FindTransactionsByUserID(userID uint) ([]domain.Transaction, error)
 	FindTransactionByOrderID(orderID uint) (*domain.Transaction, error)
+	FindTransactionsByOrderID(orderID uint) ([]domain.Transaction, error)
 	FindTransactionByTransactionID(transactionID string) (*domain.Transaction, error)
 	FindTransactionByPaymentID(paymentID string) (*domain.Transaction, error)
 	FindActivePendingTransaction(userID uint, orderID uint) (*domain.Transaction, error)
+	FindPendingTransactionsByGateway(gateway string, limit int) ([]domain.Transaction, error)
 	UpdateTransaction(transaction *domain.Transaction) (*domain.Transaction, error)
 	FindOrderById(uId uint, id uint) (dto.SellerOrderDetails, error)
 }
@@ -64,6 +66,15 @@ func (r *transactionRepository) FindTransactionByOrderID(orderID uint) (*domain.
 	return &transaction, nil
 }
 
+func (r *transactionRepository) FindTransactionsByOrderID(orderID uint) ([]domain.Transaction, error) {
+	var transactions []domain.Transaction
+	err := r.DB.Where("order_id = ?", orderID).Order("created_at DESC").Find(&transactions).Error
+	if err != nil {
+		return nil, err
+	}
+	return transactions, nil
+}
+
 func (r *transactionRepository) FindTransactionByTransactionID(transactionID string) (*domain.Transaction, error) {
 	var transaction domain.Transaction
 	err := r.DB.Where("transaction_id = ?", transactionID).First(&transaction).Error
@@ -97,6 +108,22 @@ func (r *transactionRepository) FindActivePendingTransaction(userID uint, orderI
 		return nil, err
 	}
 	return &transaction, nil
+}
+
+func (r *transactionRepository) FindPendingTransactionsByGateway(gateway string, limit int) ([]domain.Transaction, error) {
+	var transactions []domain.Transaction
+	query := r.DB.Where("payment_gateway = ? AND status = ?", gateway, "pending").
+		Order("created_at DESC")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.Find(&transactions).Error
+	if err != nil {
+		return nil, err
+	}
+	return transactions, nil
 }
 
 func (r *transactionRepository) UpdateTransaction(transaction *domain.Transaction) (*domain.Transaction, error) {

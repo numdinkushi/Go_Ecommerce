@@ -12,8 +12,8 @@ type Transaction struct {
 	PaymentGateway string    `json:"payment_gateway"`               // flutterwave, stripe, etc.
 	TransactionID  string    `json:"transaction_id"`                // Gateway transaction ID
 	PaymentID      string    `json:"payment_id"`                    // Gateway payment ID
+	CheckoutURL    string    `json:"checkout_url"`                  // Payment gateway checkout URL
 	Currency       string    `json:"currency" gorm:"default:NGN"`
 	CreatedAt      time.Time `json:"created_at" gorm:"default:CURRENT_TIMESTAMP"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"default:CURRENT_TIMESTAMP"`
 }
-

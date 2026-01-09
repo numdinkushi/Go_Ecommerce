@@ -21,3 +21,7 @@ type MakePaymentInput struct {
 	CancelURL      string `json:"cancel_url" binding:"required"`
 	// Amount is calculated server-side from cart items - not accepted from client for security
 }
+
+type VerifyPaymentInput struct {
+	Gateway string `json:"gateway" binding:"required"`
+}

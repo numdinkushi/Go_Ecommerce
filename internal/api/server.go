@@ -52,10 +52,47 @@ func StartServer(config config.AppConfig) {
 		MaxAge:           3600,
 	}))
 
+	// Add request logging middleware for debugging webhooks
+	app.Use(func(c *fiber.Ctx) error {
+		// Log all POST requests to webhook paths
+		if c.Method() == "POST" && len(c.Path()) > 0 {
+			if c.Path() == "/webhooks/payment/stripe" || c.Path() == "/webhooks/payment/tripe" {
+				log.Printf("🔍 Incoming POST request to: %s", c.Path())
+				log.Printf("   Full URL: %s %s", c.Method(), c.OriginalURL())
+				log.Printf("   Headers: stripe-signature=%s", c.Get("stripe-signature"))
+			}
+		}
+		return c.Next()
+	})
+
 	db := infra.GetDB()
 
+	// Clean up foreign key constraints and orphaned data before migration
+	// Fix: Drop constraint if it exists and remove orphaned order_items
+	err := db.Exec(`
+		DO $$ 
+		BEGIN 
+			-- Drop foreign key constraint if it exists
+			IF EXISTS (
+				SELECT 1 FROM information_schema.table_constraints 
+				WHERE constraint_name = 'fk_orders_items' 
+				AND table_name = 'order_items'
+			) THEN
+				ALTER TABLE order_items DROP CONSTRAINT fk_orders_items;
+				RAISE NOTICE 'Dropped fk_orders_items constraint';
+			END IF;
+			
+			-- Delete orphaned order_items that reference non-existent orders
+			DELETE FROM order_items 
+			WHERE order_id NOT IN (SELECT id FROM orders);
+		END $$;
+	`).Error
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not clean up foreign key constraints: %v", err)
+	}
+
 	// Run database migrations
-	err := db.AutoMigrate(
+	err = db.AutoMigrate(
 		&domain.User{},
 		&domain.BankAccount{},
 		&domain.Category{},
@@ -65,7 +102,6 @@ func StartServer(config config.AppConfig) {
 		&domain.Order{},
 		&domain.OrderItem{},
 		&domain.Transaction{},
-		&domain.Payment{},
 	)
 
 	if err != nil {
@@ -92,6 +128,26 @@ func StartServer(config config.AppConfig) {
 		log.Println("✅ Database cleanup: removed duplicate quantity column")
 	}
 
+	// Clean up: Drop payments table if it exists (unused, replaced by transactions)
+	err = db.Exec(`
+		DO $$ 
+		BEGIN 
+			IF EXISTS (
+				SELECT 1 FROM information_schema.tables 
+				WHERE table_name = 'payments'
+			) THEN
+				DROP TABLE IF EXISTS payments CASCADE;
+				RAISE NOTICE 'Table payments dropped (unused, replaced by transactions)';
+			END IF;
+		END $$;
+	`).Error
+
+	if err != nil {
+		log.Printf("⚠️  Warning: Could not drop payments table: %v", err)
+	} else {
+		log.Println("✅ Database cleanup: dropped unused payments table")
+	}
+
 	auth := helper.SetupAuth(config.JwtSecret)
 	log.Println("✅ Database migration completed successfully")
 
@@ -114,6 +170,10 @@ func StartServer(config config.AppConfig) {
 		Auth:   auth,
 		Config: config,
 	}
+
+	// Register webhook routes FIRST, before any other routes
+	// This ensures they're public and not caught by any auth middleware
+	handlers.SetupWebhookRoutes(restHandler)
 
 	setupRoutes(restHandler, bankService)
 

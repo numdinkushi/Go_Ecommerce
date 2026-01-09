@@ -101,15 +101,10 @@ func SetupEnv() (config AppConfig, err error) {
 	// Note: STRIPE_SECRET_KEY is optional - if not set, Stripe payment features will be disabled
 	// Get your keys from: https://dashboard.stripe.com (Developers → API Keys)
 
+	// Payment URLs are provided by the client in the request body, not from env vars
+	// These are kept in config for backward compatibility but are optional
 	paymentSuccessURL := os.Getenv("PAYMENT_SUCCESS_URL")
-	if len(paymentSuccessURL) < 1 {
-		return AppConfig{}, errors.New("PAYMENT_SUCCESS_URL is not set, env variable is not found")
-	}
-
 	paymentCancelURL := os.Getenv("PAYMENT_CANCEL_URL")
-	if len(paymentCancelURL) < 1 {
-		return AppConfig{}, errors.New("PAYMENT_CANCEL_URL is not set, env variable is not found")
-	}
 
 	return AppConfig{
 		ServerPort:               httpPort,
