@@ -31,13 +31,11 @@ func NewTransactionService(repo repository.TransactionRepository, orderRepo repo
 }
 
 func (s *TransactionService) CreateTransaction(userID uint, input dto.CreateTransactionInput) (*dto.TransactionResponse, error) {
-	// Business logic: Set default currency
 	currency := input.Currency
 	if currency == "" {
 		currency = "NGN"
 	}
 
-	// Business logic: Create transaction domain model
 	transaction := &domain.Transaction{
 		UserID:         userID,
 		OrderID:        input.OrderID,
@@ -55,59 +53,42 @@ func (s *TransactionService) CreateTransaction(userID uint, input dto.CreateTran
 		return nil, err
 	}
 
-	// Business logic: Transform to DTO
 	return s.toTransactionResponse(createdTransaction), nil
 }
 
 func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentInput, calculatedAmount float64, successURL, cancelURL string) (*dto.TransactionResponse, error) {
-	// Validate payment gateway
 	if input.PaymentGateway == "" {
 		return nil, errors.New("payment gateway is required")
 	}
 
-	// Amount is always calculated server-side from cart items for security
-	// No client-provided amount is accepted or validated
-
-	// DRY: Check existing transactions for this order
 	existingTransactions, err := s.Repo.FindTransactionsByOrderID(input.OrderID)
 	if err != nil {
 		return nil, err
 	}
 
-	// SOLID: Prevent duplicate payments - only allow new transaction if all previous ones are failed
 	for _, existing := range existingTransactions {
-		// Only check transactions for the same user
 		if existing.UserID != userID {
 			continue
 		}
 
-		// If transaction is succeeded, prevent new payment
 		if existing.Status == "succeeded" {
 			return nil, errors.New("payment already completed for this order")
 		}
 
-		// If transaction is pending, check with provider to verify current status
 		if existing.Status == "pending" {
 			provider, providerErr := payment.GetProvider(existing.PaymentGateway)
 			if providerErr == nil && existing.TransactionID != "" {
 				statusResp, statusErr := provider.GetPaymentStatus(existing.TransactionID)
 				if statusErr == nil {
-					// Status changed on provider - update local transaction
 					if statusResp.Status != existing.Status {
-						log.Printf("🔄 Updating existing transaction %d status from provider: %s → %s",
-							existing.ID, existing.Status, statusResp.Status)
 						s.updateTransactionFromProviderStatus(&existing, statusResp)
-						// Re-fetch to get updated status
 						updated, fetchErr := s.Repo.FindTransactionByID(existing.ID)
 						if fetchErr == nil && updated != nil {
 							existing = *updated
 						}
 					}
 
-					// If still pending after update, return existing transaction
 					if statusResp.Status == "pending" {
-						log.Printf("♻️  Reusing existing pending transaction - ID: %d, TransactionID: %s",
-							existing.ID, existing.TransactionID)
 						response := s.toTransactionResponse(&existing)
 						if existing.CheckoutURL != "" {
 							response.CheckoutURL = existing.CheckoutURL
@@ -115,20 +96,15 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 						return response, nil
 					}
 
-					// If now succeeded, prevent new payment
 					if statusResp.Status == "succeeded" {
 						return nil, errors.New("payment already completed for this order")
 					}
-					// If failed, allow new payment attempt
 					if statusResp.Status == "failed" {
 						continue
 					}
 				}
 			}
 
-			// If still pending after provider check (or provider check failed), return existing
-			log.Printf("♻️  Reusing existing pending transaction - ID: %d, TransactionID: %s",
-				existing.ID, existing.TransactionID)
 			response := s.toTransactionResponse(&existing)
 			if existing.CheckoutURL != "" {
 				response.CheckoutURL = existing.CheckoutURL
@@ -136,27 +112,21 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 			return response, nil
 		}
 
-		// If not failed and not succeeded and not pending, prevent new payment
 		if existing.Status != "failed" {
 			return nil, errors.New("cannot create new payment: existing transaction status is '" + existing.Status + "'. Only failed transactions allow new payment attempts")
 		}
 	}
 
-	// Get payment provider
 	provider, err := payment.GetProvider(input.PaymentGateway)
 	if err != nil {
 		return nil, errors.New("payment provider not available: " + input.PaymentGateway)
 	}
 
-	// Set default currency
 	currency := input.Currency
 	if currency == "" {
 		currency = "NGN"
 	}
 
-	// Create payment session using provider
-	// Use calculatedAmount (server-side) instead of client-provided amount for security
-	// URLs are provided by frontend for flexibility
 	sessionReq := payment.CreatePaymentSessionRequest{
 		Amount:     calculatedAmount,
 		Currency:   currency,
@@ -169,18 +139,10 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 
 	sessionResp, err := provider.CreatePaymentSession(sessionReq)
 	if err != nil {
-		log.Printf("❌ Failed to create payment session: %v", err)
+		log.Printf("Failed to create payment session: %v", err)
 		return nil, err
 	}
 
-	log.Printf("✅ Payment session created - SessionID: %s, PaymentID: %s, CheckoutURL: %s",
-		sessionResp.SessionID, sessionResp.PaymentID, sessionResp.CheckoutURL)
-
-	// Note: PaymentID may be empty initially - Stripe creates PaymentIntent when user starts checkout
-	// The webhook will contain the PaymentID and we'll update the transaction then
-
-	// Create transaction record
-	// Use calculatedAmount (server-side) instead of client-provided amount for security
 	transaction := &domain.Transaction{
 		UserID:         userID,
 		OrderID:        input.OrderID,
@@ -194,24 +156,14 @@ func (s *TransactionService) ProcessPayment(userID uint, input dto.MakePaymentIn
 		Currency:       currency,
 	}
 
-	log.Printf("💾 Creating transaction record - UserID: %d, OrderID: %d, TransactionID: %s, PaymentID: %s",
-		userID, input.OrderID, transaction.TransactionID, transaction.PaymentID)
-
 	createdTransaction, err := s.Repo.CreateTransaction(transaction)
 	if err != nil {
-		log.Printf("❌ Failed to create transaction in database: %v", err)
+		log.Printf("Failed to create transaction in database: %v", err)
 		return nil, err
 	}
 
-	log.Printf("✅ Transaction created successfully - ID: %d, OrderID: %d, TransactionID: %s, PaymentID: %s",
-		createdTransaction.ID, createdTransaction.OrderID, createdTransaction.TransactionID, createdTransaction.PaymentID)
-	log.Printf("📝 IMPORTANT: Webhook must match by PaymentID (%s) or TransactionID (%s)",
-		createdTransaction.PaymentID, createdTransaction.TransactionID)
-
-	// Start background polling for payment status (retry logic)
 	go s.startPaymentStatusPolling(createdTransaction.ID, input.PaymentGateway)
 
-	// Transform to DTO (checkout URL is already stored in transaction)
 	response := s.toTransactionResponse(createdTransaction)
 
 	return response, nil
@@ -223,7 +175,6 @@ func (s *TransactionService) GetTransactionsByUserID(userID uint) ([]dto.Transac
 		return nil, err
 	}
 
-	// Business logic: Transform to DTOs
 	responses := make([]dto.TransactionResponse, len(transactions))
 	for i, transaction := range transactions {
 		responses[i] = *s.toTransactionResponse(&transaction)
@@ -238,37 +189,30 @@ func (s *TransactionService) GetTransactionByIDAndUserID(id uint, userID uint) (
 		return nil, err
 	}
 
-	// Business logic: Verify ownership
 	if transaction.UserID != userID {
 		return nil, errors.New("transaction not found")
 	}
 
-	// Business logic: Transform to DTO
 	return s.toTransactionResponse(transaction), nil
 }
 
 // VerifyPaymentStatus verifies the payment status with the payment provider
-// DRY: Uses updateTransactionFromProviderStatus for consistency
 func (s *TransactionService) VerifyPaymentStatus(transactionID uint, gateway string) (*dto.TransactionResponse, error) {
-	// Get payment provider
 	provider, err := payment.GetProvider(gateway)
 	if err != nil {
 		return nil, errors.New("payment provider not available: " + gateway)
 	}
 
-	// Get transaction from DB
 	transaction, err := s.Repo.FindTransactionByID(transactionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Query provider for current status
 	statusResp, err := provider.GetPaymentStatus(transaction.TransactionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// DRY: Use shared update method
 	s.updateTransactionFromProviderStatus(transaction, statusResp)
 
 	// Fetch updated transaction
@@ -319,10 +263,7 @@ func (s *TransactionService) updateOrderWithPaymentDetails(transaction *domain.T
 	}
 
 	if transaction.Status == "succeeded" && order.Status == "confirmed" {
-		log.Printf("✅ Order %d updated - Status: 'confirmed', PaymentID: %s, TransactionID: %s",
-			order.ID, updatedOrder.PaymentId, updatedOrder.TransactionId)
-	} else {
-		log.Printf("✅ Order %d payment details updated - PaymentID: %s, TransactionID: %s",
+		log.Printf("Order %d updated - Status: confirmed, PaymentID: %s, TransactionID: %s",
 			order.ID, updatedOrder.PaymentId, updatedOrder.TransactionId)
 	}
 
@@ -332,13 +273,11 @@ func (s *TransactionService) updateOrderWithPaymentDetails(transaction *domain.T
 // updateOrderStatusIfTransactionSucceeded checks if any transaction for an order has succeeded
 // and updates the order status to "confirmed" if so (used by VerifyPaymentStatus)
 func (s *TransactionService) updateOrderStatusIfTransactionSucceeded(orderID uint) error {
-	// Get all transactions for this order
 	transactions, err := s.Repo.FindTransactionsByOrderID(orderID)
 	if err != nil {
 		return err
 	}
 
-	// Check if any transaction has succeeded
 	hasSucceeded := false
 	for _, txn := range transactions {
 		if txn.Status == "succeeded" {
@@ -347,23 +286,19 @@ func (s *TransactionService) updateOrderStatusIfTransactionSucceeded(orderID uin
 		}
 	}
 
-	// If no transaction succeeded, no need to update order
 	if !hasSucceeded {
 		return nil
 	}
 
-	// Get the order
 	order, err := s.OrderRepo.FindOrderByID(orderID)
 	if err != nil {
 		return err
 	}
 
-	// Only update if order is still pending
 	if order.Status != "pending" {
 		return nil
 	}
 
-	// Update order status to confirmed
 	order.Status = "confirmed"
 	updatedOrder, err := s.OrderRepo.UpdateOrder(order)
 	if err != nil {
@@ -390,94 +325,63 @@ func (s *TransactionService) ProcessWebhook(gateway string, payload []byte, sign
 		return err
 	}
 
-	// BEST PRACTICE: Match transactions using priority order:
-	// 1. PaymentIntent ID (for payment_intent.succeeded, charge.succeeded)
-	// 2. SessionID (for checkout.session.completed)
-	// 3. Metadata order_id (ultimate fallback for all event types)
+	// Match transactions using priority: PaymentID, SessionID, then metadata order_id
 	var transaction *domain.Transaction
 	isTestWebhook := false
 
-	// Step 1: Try matching by PaymentIntent ID first (most direct for payment_intent events)
 	if webhookEvent.PaymentID != "" {
-		log.Printf("🔍 [Step 1/3] Searching for transaction by PaymentID: %s", webhookEvent.PaymentID)
 		transaction, err = s.Repo.FindTransactionByPaymentID(webhookEvent.PaymentID)
 		if err != nil {
 			transaction = nil
-			log.Printf("   ❌ Not found by PaymentID")
-		} else {
-			log.Printf("   ✅ Found transaction by PaymentID: transaction_id=%d", transaction.ID)
 		}
 	}
 
-	// Step 2: Try matching by SessionID (for checkout.session.completed events)
 	if transaction == nil && webhookEvent.SessionID != "" {
-		log.Printf("🔍 [Step 2/3] Searching for transaction by SessionID: %s", webhookEvent.SessionID)
 		transaction, err = s.Repo.FindTransactionByTransactionID(webhookEvent.SessionID)
 		if err != nil {
 			transaction = nil
-			log.Printf("   ❌ Not found by SessionID")
-		} else {
-			log.Printf("   ✅ Found transaction by SessionID: transaction_id=%d", transaction.ID)
 		}
 	}
 
-	// Step 3: If metadata is empty, try to fetch from Stripe
-	// This is critical for payment_intent.succeeded events which may have empty metadata initially
+	// Fetch metadata from Stripe if empty (payment_intent.succeeded events may have empty metadata initially)
 	if transaction == nil && len(webhookEvent.Metadata) == 0 && gateway == "stripe" {
 		if webhookEvent.PaymentID != "" {
-			log.Printf("⚠️  Metadata empty, fetching payment intent from Stripe: %s", webhookEvent.PaymentID)
 			if stripeProvider, ok := provider.(interface {
 				GetPaymentIntentMetadata(paymentIntentID string) (map[string]string, error)
 			}); ok {
 				metadata, metaErr := stripeProvider.GetPaymentIntentMetadata(webhookEvent.PaymentID)
 				if metaErr == nil && len(metadata) > 0 {
 					webhookEvent.Metadata = metadata
-					log.Printf("✅ Fetched metadata from Stripe payment intent: %v", metadata)
 				} else if metaErr != nil {
-					// Payment intent doesn't exist (404) - likely a test webhook with dummy ID
-					log.Printf("⚠️  Payment intent not found (likely test webhook): %v", metaErr)
 					isTestWebhook = true
 				}
 			}
 		}
-		// If still no metadata, try fetching by SessionID
 		if len(webhookEvent.Metadata) == 0 && webhookEvent.SessionID != "" {
-			log.Printf("⚠️  Metadata still empty, fetching session from Stripe: %s", webhookEvent.SessionID)
 			statusResp, statusErr := provider.GetPaymentStatus(webhookEvent.SessionID)
 			if statusErr == nil && statusResp.Metadata != nil {
 				webhookEvent.Metadata = statusResp.Metadata
-				log.Printf("✅ Fetched metadata from Stripe session: %v", statusResp.Metadata)
 			}
 		}
 	}
 
-	// Step 4: Try matching by metadata order_id (ultimate fallback)
-	// This ensures we can match even if IDs don't match (due to edge cases or data inconsistencies)
+	// Fallback: match by metadata order_id
 	if transaction == nil {
 		orderIDStr := webhookEvent.Metadata["order_id"]
 		if orderIDStr != "" {
 			orderID, parseErr := strconv.ParseUint(orderIDStr, 10, 32)
 			if parseErr == nil {
-				log.Printf("🔍 [Step 3/3] Searching for transaction by order_id from metadata: %d", orderID)
 				transactions, findErr := s.Repo.FindTransactionsByOrderID(uint(orderID))
 				if findErr == nil && len(transactions) > 0 {
-					// Prefer pending transactions first
 					for i := range transactions {
 						if transactions[i].Status == "pending" {
 							transaction = &transactions[i]
-							log.Printf("✅ Found pending transaction by order_id: order_id=%d, transaction_id=%d, TransactionID=%s",
-								orderID, transaction.ID, transaction.TransactionID)
 							break
 						}
 					}
-					// If no pending found, use the most recent one
 					if transaction == nil {
 						transaction = &transactions[0]
-						log.Printf("✅ Found transaction by order_id (not pending): order_id=%d, transaction_id=%d, TransactionID=%s",
-							orderID, transaction.ID, transaction.TransactionID)
 					}
-				} else {
-					log.Printf("   ❌ No transactions found for order_id=%d", orderID)
 				}
 			}
 		}
@@ -485,32 +389,19 @@ func (s *TransactionService) ProcessWebhook(gateway string, payload []byte, sign
 
 	if transaction == nil {
 		if isTestWebhook {
-			log.Printf("⚠️  Test webhook ignored (PaymentID not found in Stripe): %s", webhookEvent.PaymentID)
-			log.Printf("   EventType: %s", webhookEvent.EventType)
-			// Return success to prevent Stripe from retrying test webhooks
 			return nil
 		}
 
-		log.Printf("❌ Transaction not found for webhook")
-		log.Printf("   EventType: %s", webhookEvent.EventType)
-		log.Printf("   PaymentID: %s", webhookEvent.PaymentID)
-		log.Printf("   SessionID: %s", webhookEvent.SessionID)
-		log.Printf("   Metadata: %v", webhookEvent.Metadata)
-		log.Printf("   Note: This webhook cannot be matched to any transaction in the database")
-
-		// Return error but don't do expensive debugging - just log and return
+		log.Printf("Transaction not found for webhook - EventType: %s, PaymentID: %s, SessionID: %s",
+			webhookEvent.EventType, webhookEvent.PaymentID, webhookEvent.SessionID)
 		return errors.New("transaction not found - webhook cannot be matched to any transaction")
 	}
 
-	// IDEMPOTENCY CHECK: If transaction is already succeeded, skip processing
-	// This prevents duplicate processing if webhook is received multiple times
+	// Skip processing if transaction already succeeded (idempotency check)
 	if transaction.Status == "succeeded" && webhookEvent.Status == "succeeded" {
-		log.Printf("✅ Transaction already succeeded (idempotency check) - ID: %d, Status: %s", transaction.ID, transaction.Status)
-		log.Printf("   Webhook event type: %s - skipping duplicate processing", webhookEvent.EventType)
 		return nil
 	}
 
-	// DRY: Use shared update method - convert webhook event to provider status response format
 	statusResp := &payment.PaymentStatusResponse{
 		Status:    webhookEvent.Status,
 		PaymentID: webhookEvent.PaymentID,
@@ -519,14 +410,11 @@ func (s *TransactionService) ProcessWebhook(gateway string, payload []byte, sign
 		Metadata:  webhookEvent.Metadata,
 	}
 
-	// Update TransactionID if webhook provides it and transaction doesn't have it
 	if webhookEvent.SessionID != "" && transaction.TransactionID == "" {
 		transaction.TransactionID = webhookEvent.SessionID
-		log.Printf("💾 Updating transaction TransactionID to: %s", webhookEvent.SessionID)
 		s.Repo.UpdateTransaction(transaction)
 	}
 
-	// DRY: Use shared update method for status and PaymentID
 	s.updateTransactionFromProviderStatus(transaction, statusResp)
 
 	return nil
@@ -590,82 +478,66 @@ func (s *TransactionService) startPaymentStatusPolling(transactionID uint, gatew
 			time.Sleep(intervals[attempt])
 
 			pollMutex.Lock()
-			// Check transaction status
 			transaction, err := s.Repo.FindTransactionByID(transactionID)
 			if err != nil {
 				pollMutex.Unlock()
-				log.Printf("⚠️  Polling: Transaction %d not found, stopping poll", transactionID)
 				return
 			}
 
-			// If already succeeded or failed, stop polling
 			if transaction.Status == "succeeded" || transaction.Status == "failed" {
 				pollMutex.Unlock()
-				log.Printf("✅ Polling: Transaction %d status is %s, stopping poll", transactionID, transaction.Status)
 				return
 			}
 
-			// Check status with provider (provider-agnostic: works with Stripe, Flutterwave, etc.)
 			provider, err := payment.GetProvider(gateway)
 			if err != nil {
 				pollMutex.Unlock()
-				log.Printf("⚠️  Polling: Provider %s not available for transaction %d", gateway, transactionID)
 				continue
 			}
 
 			statusResp, err := provider.GetPaymentStatus(transaction.TransactionID)
 			if err != nil {
 				pollMutex.Unlock()
-				log.Printf("⚠️  Polling: Failed to check status for transaction %d: %v", transactionID, err)
 				continue
 			}
 
-			// Update if status changed
 			if statusResp.Status != transaction.Status {
-				log.Printf("🔄 Polling: Transaction %d status changed: %s → %s", transactionID, transaction.Status, statusResp.Status)
+				log.Printf("Polling: Transaction %d status changed: %s → %s", transactionID, transaction.Status, statusResp.Status)
 				s.updateTransactionFromProviderStatus(transaction, statusResp)
 			}
 			pollMutex.Unlock()
 
-			// If succeeded or failed, stop polling
 			if statusResp.Status == "succeeded" || statusResp.Status == "failed" {
 				return
 			}
 		}
 
-		log.Printf("⏰ Polling: Reached max attempts for transaction %d, stopping background poll", transactionID)
+		log.Printf("Polling: Reached max attempts for transaction %d", transactionID)
 	}()
 }
 
 // updateTransactionFromProviderStatus updates transaction and order status from provider response
-// DRY: Reusable method for updating transaction status (used by polling, verification, and webhooks)
-// SOLID: Single responsibility - only updates status, doesn't handle provider-specific logic
 func (s *TransactionService) updateTransactionFromProviderStatus(transaction *domain.Transaction, statusResp *payment.PaymentStatusResponse) {
 	oldStatus := transaction.Status
 	transaction.Status = statusResp.Status
 
-	// Update PaymentID if provider provides it and transaction doesn't have it
 	if statusResp.PaymentID != "" && transaction.PaymentID == "" {
 		transaction.PaymentID = statusResp.PaymentID
-		log.Printf("💾 Updating transaction PaymentID to: %s", statusResp.PaymentID)
 	}
 
-	// Update transaction in database
 	updatedTransaction, err := s.Repo.UpdateTransaction(transaction)
 	if err != nil {
-		log.Printf("❌ Failed to update transaction %d: %v", transaction.ID, err)
+		log.Printf("Failed to update transaction %d: %v", transaction.ID, err)
 		return
 	}
 
 	if oldStatus != updatedTransaction.Status {
-		log.Printf("✅ Transaction updated via polling/verification - ID: %d, Status: %s → %s",
-			updatedTransaction.ID, oldStatus, updatedTransaction.Status)
+		log.Printf("Transaction updated - ID: %d, Status: %s → %s", updatedTransaction.ID, oldStatus, updatedTransaction.Status)
 	}
 
-	// Update order status if transaction succeeded
 	if updatedTransaction.Status == "succeeded" {
 		if err := s.updateOrderWithPaymentDetails(updatedTransaction); err != nil {
-			log.Printf("⚠️  Failed to update order after transaction status update: %v", err)
+			log.Printf("Failed to update order after transaction status update: %v", err)
 		}
 	}
 }
