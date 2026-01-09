@@ -786,13 +786,6 @@ func (s UserService) CreateOrder(u domain.User) (int, error) {
 		return 0, errors.New("cart is empty")
 	}
 
-	// find success payment reference status
-	// TODO: Implement payment verification logic
-	paymentID := "PAY12345"
-	transactionID := "12345"
-	_ = paymentID
-	_ = transactionID
-
 	// generate order reference
 	orderRef, err := helper.GenerateOrderRef(8)
 	if err != nil {
@@ -822,13 +815,14 @@ func (s UserService) CreateOrder(u domain.User) (int, error) {
 	}
 
 	// create order with generated OrderRefNumber
+	// PaymentId and TransactionId will be updated when payment succeeds via webhook
 	order := &domain.Order{
 		UserID:         u.ID,
 		Status:         "pending",
 		Amount:         totalAmount,
-		TransactionId:  transactionID,
+		TransactionId:  "", // Will be updated when payment succeeds
 		OrderRefNumber: orderRefNumber,
-		PaymentId:      paymentID,
+		PaymentId:      "", // Will be updated when payment succeeds
 		Items:          orderItems,
 	}
 

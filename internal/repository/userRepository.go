@@ -37,6 +37,7 @@ type UserRepository interface {
 	FindOrderByID(orderID uint) (*domain.Order, error)
 	FindOrdersBySellerID(sellerID uint) ([]domain.Order, error)
 	FindSellerOrderDetails(sellerID uint) ([]domain.OrderItem, error)
+	UpdateOrder(order *domain.Order) (*domain.Order, error)
 }
 
 type userRepository struct {
@@ -257,4 +258,14 @@ func (r *userRepository) FindSellerOrderDetails(sellerID uint) ([]domain.OrderIt
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *userRepository) UpdateOrder(order *domain.Order) (*domain.Order, error) {
+	var updatedOrder domain.Order
+	err := r.DB.Model(&updatedOrder).Clauses(clause.Returning{}).Where("id=?", order.ID).Updates(order).Error
+	if err != nil {
+		log.Printf("Failed to update order: %v", err)
+		return nil, err
+	}
+	return &updatedOrder, nil
 }

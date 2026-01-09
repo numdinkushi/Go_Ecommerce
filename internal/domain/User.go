@@ -17,11 +17,9 @@ type User struct {
 	Address   Address   `json:"address" gorm:"foreignKey:UserID"`
 	Cart      []Cart    `json:"cart" gorm:"foreignKey:UserID"`
 	Orders    []Order   `json:"orders" gorm:"foreignKey:UserID"`
-	Payments  []Payment `json:"payments" gorm:"foreignKey:UserID"`
 	Verified  bool      `json:"verified" gorm:"default:false"`
 	Password  string    `json:"password"`
 	UserType  string    `json:"user_type" gorm:"default:buyer"`
 	CreatedAt time.Time `json:"created_at" gorm:"default:CURRENT_TIMESTAMP"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"default:CURRENT_TIMESTAMP"`
 }
- 
